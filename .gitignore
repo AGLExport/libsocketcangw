@@ -104,3 +104,5 @@ coverage/*
 *.gcda
 *.gcno
 
+libsocketcangw.pc
+gwtest
