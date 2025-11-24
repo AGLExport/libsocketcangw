@@ -39,6 +39,9 @@ jobs:
       - name: Build
         run: make -j
 
+      - name: Test environment setup
+        run: sudo modprobe -a vcan && sudo modprobe -a vxcan
+
       - name: Test
         run: sudo ./test/run-test.sh
 
