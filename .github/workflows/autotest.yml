@@ -40,7 +40,7 @@ jobs:
         run: make -j
 
       - name: Test
-        run: ./test/run-test.sh
+        run: sudo ./test/run-test.sh
 
       - name: Check Test Coverage
         uses: threeal/gcovr-action@v1.1.0
