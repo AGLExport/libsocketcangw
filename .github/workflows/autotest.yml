@@ -39,7 +39,10 @@ jobs:
       - name: Build
         run: make -j
 
-      - name: Test environment setup
+      - name: Test environment setup 1
+        run: sudo apt install linux-modules-$(uname -r)
+
+      - name: Test environment setup 2
         run: sudo modprobe -a vcan && sudo modprobe -a vxcan
 
       - name: Test
