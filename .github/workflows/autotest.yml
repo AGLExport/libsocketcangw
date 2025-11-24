@@ -39,8 +39,8 @@ jobs:
       - name: Build
         run: make -j
 
-      - name: Build
-        run: ./test/clean-test.sh && ./test/run-test.sh
+      - name: Test
+        run: ./test/run-test.sh
 
       - name: Check Test Coverage
         uses: threeal/gcovr-action@v1.1.0
