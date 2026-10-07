@@ -42,8 +42,8 @@ jobs:
       - name: Test environment setup 1
         run: sudo apt install linux-modules-$(uname -r)
 
-      - name: Test environment setup 2
-        run: sudo modprobe -a vcan && sudo modprobe -a vxcan
+#      - name: Test environment setup 2
+#        run: sudo modprobe -a vcan && sudo modprobe -a vxcan
 
       - name: Test
         run: sudo ./test/run-test.sh
