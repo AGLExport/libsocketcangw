@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "filters": [
+    {
+      "can_id": "0x123",
+      "can_mask": "0xFFF",
+      "invert": true,
+      "echo": false
+    },
+    {
+      "can_id": "0x3c0",
+      "can_mask": "0xFFF",
+      "invert": false,
+      "echo": false
+    }
+  ]
+}

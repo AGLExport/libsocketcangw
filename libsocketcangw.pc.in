@@ -5,7 +5,7 @@ includedir=@includedir@
 
 Name: libsocketcangw
 Description: Helper library for gateway feature of socket can.
-Requires:
+Requires: libcjson >= 1.7.15
 Version: 1.0
 Libs: -L${libdir} -lsocketcangw
 Cflags: -I${includedir}

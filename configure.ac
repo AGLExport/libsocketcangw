@@ -44,6 +44,7 @@ LT_INIT
 AM_PROG_LIBTOOL 
 
 PKG_PROG_PKG_CONFIG
+PKG_CHECK_MODULES([LIBCJSON], [libcjson])
 AS_CASE( ["$enable_test"], [yes], [PKG_CHECK_MODULES([CMOCKA], [cmocka])],[])
 
 

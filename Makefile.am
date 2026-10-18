@@ -10,4 +10,5 @@ pkgconfig_DATA = libsocketcangw.pc
 CLEANFILES = libsocketcangw.pc
 
 include_HEADERS = \
-    include/libsocketcangw.h
+    include/libsocketcangw.h \
+    include/libsocketcangw_config.h

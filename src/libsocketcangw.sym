@@ -3,3 +3,6 @@ cangw_delete_rule
 cangw_clean_rule
 cangw_get_rules
 cangw_release_rules
+cangw_config_load_from_file
+cangw_config_release_config
+cangw_config_log_enable
