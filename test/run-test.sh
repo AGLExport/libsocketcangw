@@ -11,4 +11,3 @@ ip link add vxcan0 type vxcan peer name vxcan1
 ip link del vxcan0
 ip link del vcan0
 ip link del vcan1
-

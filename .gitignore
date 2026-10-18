@@ -106,3 +106,4 @@ coverage/*
 
 libsocketcangw.pc
 gwtest
+parsertest
