@@ -107,3 +107,4 @@ coverage/*
 libsocketcangw.pc
 gwtest
 parsertest
+cangw-config-check
