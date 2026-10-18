@@ -18,6 +18,18 @@ libsocketcangw_la_CFLAGS = \
 libsocketcangw_la_LDFLAGS = \
 	-export-symbols $(top_srcdir)/src/libsocketcangw.sym -version-info 0:0:0
 
+
+bin_PROGRAMS = cangw-config-check
+
+cangw_config_check_SOURCES = cangw_config_check.c
+
+cangw_config_check_CPPFLAGS = \
+	-I$(top_srcdir)/include \
+	$(LIBCJSON_CFLAGS) \
+	-D_GNU_SOURCE
+
+cangw_config_check_LDADD = $(LIBCJSON_LIBS)
+
 # configure option 
 if ENABLE_ADDRESS_SANITIZER
 CFLAGS   += -fsanitize=address
