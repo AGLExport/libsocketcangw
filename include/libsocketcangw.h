@@ -11,6 +11,7 @@
  * @brief API overview
  */
 #include <linux/can.h>
+#include <stddef.h>
 
 #ifdef __cplusplus
 extern "C" {
