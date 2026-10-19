@@ -424,7 +424,7 @@ int cangw_config_load_from_file(socketcan_gw_rules_t **ppsgr, const char *file)
 	int result = -1;
 
 	if ((ppsgr == NULL) || (file == NULL)) {
-		cangw_config_log("cangw: Failed to allocate memory in cangw_config_load_from_file.\n");
+		cangw_config_log("cangw: Invalid arguments in cangw_config_load_from_file.\n");
 		return -1;
 	}
 
