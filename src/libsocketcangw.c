@@ -153,6 +153,7 @@ static int push_gw_rule(socketcan_gw_rules_t *gw_rules, socketcan_gw_rule_t *rul
 		if (pnew_rules != NULL) {
 			gw_rules->rules = pnew_rules;
 		} else {
+			gw_rules->array_num = gw_rules->array_num / 2;	// failed to extend, restore array_num
 			result = -1;
 			goto do_return;
 		}
@@ -205,6 +206,7 @@ static int parse_listing_data(socketcan_gw_rules_t *gw_rules, unsigned char *rxb
 	struct rtattr *rta = NULL;
 	struct nlmsghdr *nlh = NULL;
 	int rtlen = 0;
+	int ret = -1;
 	int result = 0;
 
 	nlh = (struct nlmsghdr *) rxbuf;
@@ -288,7 +290,11 @@ static int parse_listing_data(socketcan_gw_rules_t *gw_rules, unsigned char *rxb
 			rta = RTA_NEXT(rta, rtlen);
 		}
 
-		push_gw_rule(gw_rules, rule);
+		ret = push_gw_rule(gw_rules, rule);
+		if (ret < 0) {
+			result = -1;
+			goto error_return;
+		}
 
 		nlh = NLMSG_NEXT(nlh, len);
 	}
@@ -530,6 +536,7 @@ int cangw_get_rules(socketcan_gw_rules_t **gw_rules)
 	pgw_rules->rules = NULL;
 
 	while (1) {
+		int localret = -1;
 		unsigned char rxbuf[8192];
 		memset(rxbuf, 0, sizeof(rxbuf));
 
@@ -539,14 +546,25 @@ int cangw_get_rules(socketcan_gw_rules_t **gw_rules)
 			goto do_return;
 		}
 
-		/* leave on errors or NLMSG_DONE */
-		if (parse_listing_data(pgw_rules, rxbuf, ret))
-			break;
+		localret = parse_listing_data(pgw_rules, rxbuf, ret);
+		if (localret > 0) {
+			break; /* completed to get routing rule from kernel */
+		} else if (localret < 0) {
+			result = -1;
+			goto do_return;
+		} else {
+			;/* continue to get routing rule from kernel */
+		}
 	}
 
 	(*gw_rules) = pgw_rules;
+	pgw_rules = NULL;
 
 do_return:
+	if (pgw_rules != NULL) {
+		cangw_release_rules(pgw_rules);
+	}
+
 	if (sock_fd >= 0) {
 		close(sock_fd);
 	}
