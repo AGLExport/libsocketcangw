@@ -212,27 +212,32 @@ static int parse_listing_data(socketcan_gw_rules_t *gw_rules, unsigned char *rxb
 	nlh = (struct nlmsghdr *) rxbuf;
 
 	while (1) {
+		// check the message is valid
 		if (!NLMSG_OK(nlh, len)) {
 			result = 0;
 			break;
 		}
 
+		// if it is error message, return error
 		if (nlh->nlmsg_type == NLMSG_ERROR) {
 			result = -1;
 			break;
 		}
 
+		// if it is done message, return completed
 		if (nlh->nlmsg_type == NLMSG_DONE) {
 			result = 1;
 			break;
 		}
 
+		// Check the AF_CAN message
 		rtc = (struct rtcanmsg *) NLMSG_DATA(nlh);
 		if (rtc->can_family != AF_CAN) {
 			result = -1;
 			break;
 		}
 
+		// Check the functionality of the can gateway
 		if (rtc->gwtype != CGW_TYPE_CAN_CAN) {
 			result = -1;
 			break;
@@ -245,6 +250,7 @@ static int parse_listing_data(socketcan_gw_rules_t *gw_rules, unsigned char *rxb
 		}
 		memset(rule, 0, sizeof(socketcan_gw_rule_t));
 
+		// Pick up the src_ifindex and dst_ifindex from the netlink message
 		rta = (struct rtattr *) RTCAN_RTA(rtc);
 		rtlen = RTCAN_PAYLOAD(nlh);
 		while (RTA_OK(rta, rtlen)) {
@@ -262,13 +268,14 @@ static int parse_listing_data(socketcan_gw_rules_t *gw_rules, unsigned char *rxb
 		}
 
 		rule->options = (SOCKETCAN_GW_RULE_ECHO | SOCKETCAN_GW_RULE_FILTER);
-
+		// Pick up the echo status from the netlink message
 		if ((rtc->flags & CGW_FLAGS_CAN_ECHO) == CGW_FLAGS_CAN_ECHO) {
 			rule->echo = 1;
 		} else {
 			rule->echo = 0;
 		}
 
+		// Pick up the filter from the netlink message
 		rta = (struct rtattr *) RTCAN_RTA(rtc);
 		rtlen = RTCAN_PAYLOAD(nlh);
 		while (RTA_OK(rta, rtlen)) {
@@ -284,18 +291,22 @@ static int parse_listing_data(socketcan_gw_rules_t *gw_rules, unsigned char *rxb
 				break;
 			}
 
+			// To be extended for other attributes in the future
+
 			default:
 				break;
 			}
 			rta = RTA_NEXT(rta, rtlen);
 		}
 
+		// push the rule into gw_rules
 		ret = push_gw_rule(gw_rules, rule);
 		if (ret < 0) {
 			result = -1;
 			goto error_return;
 		}
 
+		// Move to next message
 		nlh = NLMSG_NEXT(nlh, len);
 	}
 
