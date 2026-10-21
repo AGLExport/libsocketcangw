@@ -10,7 +10,7 @@ extern "C" {
 
 int cangw_config_load_from_file(socketcan_gw_rules_t **ppsgr, const char *file);
 void cangw_config_release_config(socketcan_gw_rules_t *psgr);
-
+int cangw_config_log_enable(void);
 #ifdef __cplusplus
 }
 #endif

@@ -385,7 +385,7 @@ static void test_json_and_version_errors(void **state)
 		      { "{\"version\":1}", -2, "'filters' array is missing" },
 		      { "{\"version\":1,\"filters\":null}", -2, "does not array" },
 		      { "{\"version\":1,\"filters\":{}}", -2, "does not array" },
-		      { "{\"version\":1,\"filters\":[]}", -2, "Array size" },
+		      { "{\"version\":1,\"filters\":[]}", -2, "Invalid array size" },
 		      { "{\"version\":1,\"filters\":[null]}", -2, "Invalid filter format" },
 		      { "{\"version\":1,\"filters\":[" VALID_FILTER ",false]}", -2, "Invalid filter format" },
 		      { "{\"version\":1,\"filters\":[" VALID_FILTER ",{}]}", -2, "No can_id" } };
