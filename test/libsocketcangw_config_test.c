@@ -232,7 +232,8 @@ static cJSON *parse(const char *text)
 	return node;
 }
 
-static void assert_rule(const socketcan_gw_rule_t *rule, uint32_t id, uint32_t mask, unsigned int echo)
+static void assert_rule(const socketcan_gw_rule_t *rule, uint32_t id, uint32_t mask,
+	unsigned int echo, unsigned int invert)
 {
 	assert_non_null(rule);
 	assert_int_equal(rule->src_ifindex, 0);
@@ -240,6 +241,7 @@ static void assert_rule(const socketcan_gw_rule_t *rule, uint32_t id, uint32_t m
 	assert_int_equal(rule->filter.can_id, id);
 	assert_int_equal(rule->filter.can_mask, mask);
 	assert_int_equal(rule->echo, echo);
+	assert_int_equal(rule->invert_can_id, invert);
 	assert_int_equal(rule->options, SOCKETCAN_GW_RULE_FILTER | (echo ? SOCKETCAN_GW_RULE_ECHO : 0));
 }
 
@@ -409,8 +411,8 @@ static void test_load_success(void **state)
 	assert_non_null(rules);
 	assert_int_equal(rules->rule_num, 2);
 	assert_int_equal(rules->array_num, 2);
-	assert_rule(rules->rules[0], 0x123, 0x7ff, 0);
-	assert_rule(rules->rules[1], 0x1fffffff | CAN_INV_FILTER, 0x1fffffff, 1);
+	assert_rule(rules->rules[0], 0x123, 0x7ff, 0, 0);
+	assert_rule(rules->rules[1], 0x1fffffff, 0x1fffffff, 1, 1);
 	assert_int_equal(input.closes, 1);
 	assert_int_equal(log_calls, 0);
 	cangw_config_release_config(rules);
@@ -425,7 +427,7 @@ static void test_preexisting_version_and_duplicate_policy(void **state)
 		"{\"version\":1.9,\"version\":2,\"filters\":["
 		"{\"can_id\":\"0x123\",\"can_id\":\"invalid\",\"can_mask\":\"0x7ff\"}]}");
 	assert_int_equal(cangw_config_load_from_file(&rules, "config.json"), 0);
-	assert_rule(rules->rules[0], 0x123, 0x7ff, 0);
+	assert_rule(rules->rules[0], 0x123, 0x7ff, 0, 0);
 	cangw_config_release_config(rules);
 }
 
@@ -538,9 +540,9 @@ static void test_filter_optional_values(void **state)
 		filter = parse(text);
 		assert_int_equal(cangw_parse_filter(&rule, filter), 0);
 		if (i == 0)
-			assert_rule(rule, 0x123, 0x7ff, 0);
+			assert_rule(rule, 0x123, 0x7ff, 0, 0);
 		else
-			assert_rule(rule, i == 3 ? CAN_INV_FILTER : 0, 0, i == 3);
+			assert_rule(rule, 0, 0, i == 3, i == 3);
 		config_test_free(rule);
 		cJSON_Delete(filter);
 	}
@@ -557,7 +559,7 @@ static void test_filter_optional_values(void **state)
 			invert ? "false" : "true");
 		filter = parse(text);
 		assert_int_equal(cangw_parse_filter(&rule, filter), 0);
-		assert_rule(rule, 0x123 | (invert ? CAN_INV_FILTER : 0), 0x7ff, !invert);
+		assert_rule(rule, 0x123, 0x7ff, !invert, invert);
 		config_test_free(rule);
 		cJSON_Delete(filter);
 	}
@@ -597,7 +599,7 @@ static void test_filter_count_boundaries(void **state)
 			assert_int_equal(cangw_config_load_from_file(&rules, "config.json"), 0);
 			assert_int_equal(rules->rule_num, count);
 			for (int i = 0; i < count; i++)
-				assert_rule(rules->rules[i], 0x123, 0x7ff, 0);
+				assert_rule(rules->rules[i], 0x123, 0x7ff, 0, 0);
 			cangw_config_release_config(rules);
 		} else {
 			expect_load_error(-2, "Array size");

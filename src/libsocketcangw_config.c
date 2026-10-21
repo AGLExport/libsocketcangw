@@ -268,12 +268,13 @@ static int cangw_parse_filter(socketcan_gw_rule_t** pprule, const cJSON *filter)
 	type = cJSON_GetObjectItemCaseSensitive(filter, "invert");
 	if (type != NULL) {
 		if (cJSON_IsTrue(type)) {
-			rule.filter.can_id = rule.filter.can_id | CAN_INV_FILTER;
+			rule.invert_can_id = 1;
 		} else {
-			; // nop
+			rule.invert_can_id = 0;
 		}
 	} else {
 		// If ite does not have invert key, this value set false.
+		rule.invert_can_id = 0;
 		cangw_config_log("cangw: No invert entry in filter. Use default (false).\n");
 	}
 
@@ -287,8 +288,8 @@ static int cangw_parse_filter(socketcan_gw_rule_t** pprule, const cJSON *filter)
 		}
 	} else {
 		// If ite does not have echo key, this value set zero.
-		cangw_config_log("cangw: No echo entry in filter. Use default (false).\n");
 		rule.echo = 0;
+		cangw_config_log("cangw: No echo entry in filter. Use default (false).\n");
 	}
 
 	prule = (socketcan_gw_rule_t*)malloc(sizeof(socketcan_gw_rule_t));
@@ -303,6 +304,7 @@ static int cangw_parse_filter(socketcan_gw_rule_t** pprule, const cJSON *filter)
 	prule->filter.can_id  = rule.filter.can_id;
 	prule->filter.can_mask = rule.filter.can_mask;
 	prule->echo = rule.echo;
+	prule->invert_can_id = rule.invert_can_id;
 	prule->options |= SOCKETCAN_GW_RULE_FILTER;
 	if (rule.echo == 1) {
 		prule->options |= SOCKETCAN_GW_RULE_ECHO;
