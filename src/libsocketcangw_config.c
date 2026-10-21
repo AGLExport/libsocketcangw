@@ -266,7 +266,7 @@ static int cangw_parse_filter(socketcan_gw_rule_t** pprule, const cJSON *filter)
 	}
 
 	type = cJSON_GetObjectItemCaseSensitive(filter, "invert");
-	if (!cJSON_IsNull(type)) {
+	if (type != NULL) {
 		if (cJSON_IsTrue(type)) {
 			rule.filter.can_id = rule.filter.can_id | CAN_INV_FILTER;
 		} else {
@@ -274,11 +274,11 @@ static int cangw_parse_filter(socketcan_gw_rule_t** pprule, const cJSON *filter)
 		}
 	} else {
 		// If ite does not have invert key, this value set false.
-		; // nop
+		cangw_config_log("cangw: No invert entry in filter. Use default (false).\n");
 	}
 
 	type = cJSON_GetObjectItemCaseSensitive(filter, "echo");
-	if (!cJSON_IsNull(type)) {
+	if (type != NULL) {
 		if (cJSON_IsTrue(type)) {
 			rule.echo = 1;
 		} else {
@@ -287,6 +287,7 @@ static int cangw_parse_filter(socketcan_gw_rule_t** pprule, const cJSON *filter)
 		}
 	} else {
 		// If ite does not have echo key, this value set zero.
+		cangw_config_log("cangw: No echo entry in filter. Use default (false).\n");
 		rule.echo = 0;
 	}
 
@@ -345,9 +346,13 @@ static int cangw_parse_filters_v1(socketcan_gw_rule_t ***ppprules, size_t *parra
 		cJSON *elem = NULL;
 
 		json_array_size = cJSON_GetArraySize(filters);
-		if (g_cangw_filter_max < json_array_size || json_array_size <= 0) {
+		if (g_cangw_filter_max < json_array_size) {
 			result = -2;
 			cangw_config_log("cangw: Array size exceeds the limit in format version 1.\n");
+			goto err_ret;
+		} else if (json_array_size <= 0) {
+			result = -2;
+			cangw_config_log("cangw: Invalid array size in format version 1.\n");
 			goto err_ret;
 		}
 
