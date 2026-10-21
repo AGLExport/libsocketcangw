@@ -27,6 +27,7 @@ struct s_socketcan_gw_rule {
 	unsigned int options;
 
 	unsigned int echo;
+	unsigned int invert_can_id;
 	struct can_filter filter;
 };
 typedef struct s_socketcan_gw_rule socketcan_gw_rule_t;

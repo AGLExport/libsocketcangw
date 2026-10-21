@@ -282,10 +282,12 @@ static int parse_listing_data(socketcan_gw_rules_t *gw_rules, unsigned char *rxb
 			switch (rta->rta_type) {
 			case CGW_FILTER: {
 				struct can_filter *filter = (struct can_filter *) RTA_DATA(rta);
-				if (filter->can_id & CAN_INV_FILTER) {
+				if ((filter->can_id & CAN_INV_FILTER) == CAN_INV_FILTER) {
 					rule->filter.can_id = (filter->can_id & ~CAN_INV_FILTER);
+					rule->invert_can_id = 1;
 				} else {
 					rule->filter.can_id = filter->can_id;
+					rule->invert_can_id = 0;
 				}
 				rule->filter.can_mask = filter->can_mask;
 				break;
@@ -360,11 +362,20 @@ static void operate_rule_options(struct s_request_data *req, socketcan_gw_rule_t
 	}
 
 	if ((rule->options & SOCKETCAN_GW_RULE_FILTER) == SOCKETCAN_GW_RULE_FILTER) {
+		struct can_filter filter;
+		memset(&filter, 0, sizeof(struct can_filter));
+
+		filter.can_id = rule->filter.can_id;
+		filter.can_mask = rule->filter.can_mask;
+		if (rule->invert_can_id == 1) {
+			filter.can_id = filter.can_id | CAN_INV_FILTER;
+		}
+
 		addattr_l(
 			&req->nh,
 			sizeof(struct s_request_data),
 			CGW_FILTER,
-			&rule->filter,
+			&filter,
 			sizeof(struct can_filter));
 	}
 }
