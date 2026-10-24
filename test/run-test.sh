@@ -1,5 +1,7 @@
 #!/bin/sh -e
 
+./test/gwunittest
+
 ip link add dev vcan0 type vcan
 ip link add dev vcan1 type vcan
 ip link add vxcan0 type vxcan peer name vxcan1
@@ -11,3 +13,5 @@ ip link add vxcan0 type vxcan peer name vxcan1
 ip link del vxcan0
 ip link del vcan0
 ip link del vcan1
+
+./test/parsertest
