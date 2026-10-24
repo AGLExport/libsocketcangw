@@ -1,0 +1,527 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
+/* White-box cmocka tests; no CAN devices or root privileges required. */
+#include <errno.h>
+#include <fcntl.h>
+#include <linux/can/gw.h>
+#include <linux/if_link.h>
+#include <linux/netlink.h>
+#include <linux/rtnetlink.h>
+#include <net/if.h>
+#include <setjmp.h>
+#include <stdarg.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
+#include <cmocka.h>
+#include <libsocketcangw.h>
+
+/* Compatibility with cmocka 1.x, which has no typed integer expectations. */
+#ifndef check_expected_uint
+#define check_expected_uint(parameter) check_expected(parameter)
+#endif
+#ifndef expect_uint_value
+#define expect_uint_value(function, parameter, value) expect_value(function, parameter, value)
+#endif
+
+#define TEST_SOCKET_FD 42
+
+static size_t malloc_calls, malloc_fail_at;
+static const unsigned char *recv_data;
+static size_t recv_length;
+static int recv_error;
+static size_t recv_calls, recv_error_at;
+
+static int setup(void **state)
+{
+	(void) state;
+	malloc_calls = malloc_fail_at = 0;
+	recv_data = NULL;
+	recv_length = 0;
+	recv_error = 0;
+	recv_calls = recv_error_at = 0;
+	return 0;
+}
+
+static void *rule_test_malloc(size_t size)
+{
+	if (++malloc_calls == malloc_fail_at) {
+		errno = ENOMEM;
+		return NULL;
+	}
+	return test_malloc(size);
+}
+
+static int rule_test_socket(int domain, int type, int protocol)
+{
+	int result;
+	assert_int_equal(domain, PF_NETLINK);
+	assert_int_equal(type, SOCK_RAW);
+	assert_int_equal(protocol, NETLINK_ROUTE);
+	result = mock_type(int);
+	if (result < 0)
+		errno = EMFILE;
+	return result;
+}
+
+static ssize_t rule_test_sendto(int fd, const void *buffer, size_t length, int flags,
+	const struct sockaddr *address, socklen_t address_length)
+{
+	const struct sockaddr_nl *nladdr = (const struct sockaddr_nl *) address;
+	int result;
+	assert_int_equal(fd, TEST_SOCKET_FD);
+	assert_non_null(buffer);
+	check_expected_uint(length);
+	assert_int_equal(flags, 0);
+	assert_non_null(address);
+	assert_int_equal(address_length, sizeof(*nladdr));
+	assert_int_equal(nladdr->nl_family, AF_NETLINK);
+	assert_int_equal(nladdr->nl_pid, 0);
+	assert_int_equal(nladdr->nl_groups, 0);
+	assert_int_equal(((const struct nlmsghdr *) buffer)->nlmsg_len, length);
+	result = mock_type(int);
+	if (result < 0)
+		errno = ENOBUFS;
+	return result;
+}
+
+static ssize_t rule_test_recv(int fd, void *buffer, size_t length, int flags)
+{
+	function_called();
+	assert_int_equal(fd, TEST_SOCKET_FD);
+	assert_int_equal(flags, 0);
+	assert_non_null(buffer);
+	recv_calls++;
+	if (recv_error != 0 && (recv_error_at == 0 || recv_calls == recv_error_at)) {
+		errno = recv_error;
+		return -1;
+	}
+	assert_non_null(recv_data);
+	assert_true(recv_length <= length);
+	memcpy(buffer, recv_data, recv_length);
+	return (ssize_t) recv_length;
+}
+
+static int rule_test_close(int fd)
+{
+	function_called();
+	assert_int_equal(fd, TEST_SOCKET_FD);
+	return 0;
+}
+
+static void *rule_test_realloc(void *pointer, size_t size)
+{
+	uintptr_t address = (uintptr_t) pointer;
+	check_expected_uint(address);
+	check_expected_uint(size);
+	if (mock_type(int)) {
+		errno = ENOMEM;
+		return NULL;
+	}
+	return test_realloc(pointer, size);
+}
+
+/* Substitute only the implementation; all allocations use cmocka tracking. */
+#define malloc rule_test_malloc
+#define socket rule_test_socket
+#define sendto rule_test_sendto
+#define recv rule_test_recv
+#define close rule_test_close
+#define realloc rule_test_realloc
+#define free test_free
+#include "../src/libsocketcangw.c"
+#undef malloc
+#undef realloc
+#undef free
+#undef socket
+#undef sendto
+#undef recv
+#undef close
+
+static void test_push_gw_rule_realloc_failure(void **state)
+{
+	socketcan_gw_rules_t *gw_rules = test_calloc(1, sizeof(*gw_rules));
+	socketcan_gw_rule_t *rules[3];
+	(void) state;
+
+	for (size_t i = 0; i < 3; i++) {
+		rules[i] = test_calloc(1, sizeof(*rules[i]));
+		rules[i]->filter.can_id = (unsigned int) i + 1;
+		rules[i]->filter.can_mask = 0x7ff;
+	}
+	assert_int_equal(push_gw_rule(gw_rules, rules[0]), 0);
+	assert_int_equal(push_gw_rule(gw_rules, rules[1]), 0);
+	assert_int_equal(gw_rules->rule_num, 2);
+	assert_int_equal(gw_rules->array_num, 2);
+	socketcan_gw_rule_t **original = gw_rules->rules;
+
+	expect_uint_value(rule_test_realloc, address, (uintptr_t) original);
+	expect_uint_value(rule_test_realloc, size, 4 * sizeof(*original));
+	will_return(rule_test_realloc, 1);
+	assert_int_equal(push_gw_rule(gw_rules, rules[2]), -1);
+	assert_ptr_equal(gw_rules->rules, original);
+	assert_int_equal(gw_rules->rule_num, 2);
+	assert_int_equal(gw_rules->array_num, 2);
+	for (size_t i = 0; i < 2; i++) {
+		assert_ptr_equal(gw_rules->rules[i], rules[i]);
+		assert_int_equal(gw_rules->rules[i]->filter.can_id, i + 1);
+		assert_int_equal(gw_rules->rules[i]->filter.can_mask, 0x7ff);
+	}
+	/* The rejected rule remains owned by the caller and can be retried. */
+	assert_int_equal(rules[2]->filter.can_id, 3);
+	expect_uint_value(rule_test_realloc, address, (uintptr_t) original);
+	expect_uint_value(rule_test_realloc, size, 4 * sizeof(*original));
+	will_return(rule_test_realloc, 0);
+	assert_int_equal(push_gw_rule(gw_rules, rules[2]), 0);
+	assert_int_equal(gw_rules->rule_num, 3);
+	assert_int_equal(gw_rules->array_num, 4);
+	for (size_t i = 0; i < 3; i++) {
+		assert_ptr_equal(gw_rules->rules[i], rules[i]);
+		assert_int_equal(gw_rules->rules[i]->filter.can_id, i + 1);
+		assert_int_equal(gw_rules->rules[i]->filter.can_mask, 0x7ff);
+	}
+	assert_int_equal(cangw_release_rules(gw_rules), 0);
+}
+
+static void test_parse_listing_data_realloc_failure(void **state)
+{
+	socketcan_gw_rules_t *gw_rules = test_calloc(1, sizeof(*gw_rules));
+	struct s_request_data req;
+	unsigned char rxbuf[3 * NLMSG_SPACE(sizeof(struct rtcanmsg))];
+	(void) state;
+
+	init_req_data(&req, 0, RTM_NEWROUTE);
+	memset(rxbuf, 0, sizeof(rxbuf));
+	for (size_t i = 0; i < 3; i++)
+		memcpy(rxbuf + i * NLMSG_SPACE(sizeof(struct rtcanmsg)), &req, req.nh.nlmsg_len);
+
+	expect_any(rule_test_realloc, address);
+	expect_uint_value(rule_test_realloc, size, 4 * sizeof(*gw_rules->rules));
+	will_return(rule_test_realloc, 1);
+	assert_int_equal(parse_listing_data(gw_rules, rxbuf, sizeof(rxbuf)), -1);
+	assert_int_equal(gw_rules->rule_num, 2);
+	assert_int_equal(gw_rules->array_num, 2);
+	assert_non_null(gw_rules->rules[0]);
+	assert_non_null(gw_rules->rules[1]);
+	/* cmocka also checks that the unregistered third rule was freed. */
+	assert_int_equal(cangw_release_rules(gw_rules), 0);
+}
+
+static void test_addattr_l_failure(void **state)
+{
+	struct nlmsghdr nlh;
+	(void) state;
+
+	memset(&nlh, 0, sizeof(nlh));
+	nlh.nlmsg_len = 1024;
+
+	assert_int_equal(addattr_l(&nlh, 0, 0, NULL, 0), -1);
+}
+
+static size_t make_listing_data(unsigned char *buffer, size_t capacity)
+{
+	size_t used = 0;
+	for (unsigned int i = 0; i < 2; i++) {
+		struct s_request_data req;
+		unsigned int src = 1, dst = 2;
+		struct can_filter filter = { .can_id = i + 1, .can_mask = 0x7ff };
+		init_req_data(&req, 0, RTM_NEWROUTE);
+		assert_int_equal(addattr_l(&req.nh, sizeof(req), CGW_SRC_IF, &src, sizeof(src)), 0);
+		assert_int_equal(addattr_l(&req.nh, sizeof(req), CGW_DST_IF, &dst, sizeof(dst)), 0);
+		assert_int_equal(addattr_l(&req.nh, sizeof(req), CGW_FILTER, &filter, sizeof(filter)), 0);
+		assert_true(used + NLMSG_ALIGN(req.nh.nlmsg_len) <= capacity);
+		memcpy(buffer + used, &req, req.nh.nlmsg_len);
+		used += NLMSG_ALIGN(req.nh.nlmsg_len);
+	}
+	return used;
+}
+
+static void test_push_gw_rule_malloc_failure(void **state)
+{
+	socketcan_gw_rules_t *gw_rules = test_calloc(1, sizeof(*gw_rules));
+	socketcan_gw_rule_t *rule = test_calloc(1, sizeof(*rule));
+	(void) state;
+	rule->filter.can_id = 0x123;
+	malloc_fail_at = 1;
+	assert_int_equal(push_gw_rule(gw_rules, rule), -1);
+	assert_int_equal(malloc_calls, 1);
+	assert_null(gw_rules->rules);
+	assert_int_equal(gw_rules->rule_num, 0);
+	assert_int_equal(rule->filter.can_id, 0x123);
+	malloc_fail_at = 0;
+	assert_int_equal(push_gw_rule(gw_rules, rule), 0);
+	assert_int_equal(gw_rules->rule_num, 1);
+	assert_ptr_equal(gw_rules->rules[0], rule);
+	assert_int_equal(cangw_release_rules(gw_rules), 0);
+}
+
+static void test_parse_listing_data_malloc_failures(void **state)
+{
+	unsigned char rxbuf[2 * sizeof(struct s_request_data)] = { 0 };
+	size_t length = make_listing_data(rxbuf, sizeof(rxbuf));
+	(void) state;
+	/* Fail the first rule, its pointer array, and the second rule. */
+	for (size_t fail_at = 1; fail_at <= 3; fail_at++) {
+		socketcan_gw_rules_t *gw_rules = test_calloc(1, sizeof(*gw_rules));
+		malloc_calls = 0;
+		malloc_fail_at = fail_at;
+		assert_int_equal(parse_listing_data(gw_rules, rxbuf, (int) length), -1);
+		assert_int_equal(malloc_calls, fail_at);
+		assert_int_equal(gw_rules->rule_num, fail_at == 3 ? 1 : 0);
+		if (gw_rules->rule_num != 0) {
+			assert_int_equal(gw_rules->rules[0]->filter.can_id, 1);
+			assert_int_equal(gw_rules->rules[0]->filter.can_mask, 0x7ff);
+		}
+		assert_int_equal(cangw_release_rules(gw_rules), 0);
+	}
+}
+
+static void expect_send_request(size_t length, int result)
+{
+	expect_uint_value(rule_test_sendto, length, length);
+	will_return(rule_test_sendto, result);
+}
+
+static void test_get_rules_malloc_failures(void **state)
+{
+	unsigned char rxbuf[2 * sizeof(struct s_request_data)] = { 0 };
+	(void) state;
+	recv_data = rxbuf;
+	recv_length = make_listing_data(rxbuf, sizeof(rxbuf));
+	/* Container, first rule, pointer array, and second rule. */
+	for (size_t fail_at = 1; fail_at <= 4; fail_at++) {
+		socketcan_gw_rules_t *gw_rules = NULL;
+		malloc_calls = 0;
+		malloc_fail_at = fail_at;
+		will_return(rule_test_socket, TEST_SOCKET_FD);
+		expect_send_request(NLMSG_LENGTH(sizeof(struct rtcanmsg)),
+			(int) NLMSG_LENGTH(sizeof(struct rtcanmsg)));
+		if (fail_at > 1)
+			expect_function_call(rule_test_recv);
+		expect_function_call(rule_test_close);
+		assert_int_equal(cangw_get_rules(&gw_rules), -1);
+		assert_null(gw_rules);
+		assert_int_equal(malloc_calls, fail_at);
+	}
+}
+
+static int run_set_operation(size_t operation)
+{
+	socketcan_gw_rule_t rule = { .src_ifindex = 1, .dst_ifindex = 2 };
+	if (operation == 0)
+		return cangw_add_rule(&rule);
+	if (operation == 1)
+		return cangw_delete_rule(&rule);
+	return cangw_clean_rule();
+}
+
+static void test_set_request_socket_failure(void **state)
+{
+	(void) state;
+	for (size_t operation = 0; operation < 3; operation++) {
+		will_return(rule_test_socket, -1);
+		assert_int_equal(run_set_operation(operation), -1);
+	}
+	assert_int_equal(malloc_calls, 0);
+}
+
+static void test_get_rules_socket_failure(void **state)
+{
+	socketcan_gw_rules_t *gw_rules = NULL;
+	(void) state;
+	will_return(rule_test_socket, -1);
+	assert_int_equal(cangw_get_rules(&gw_rules), -2);
+	assert_null(gw_rules);
+	assert_int_equal(malloc_calls, 0);
+}
+
+static void test_set_request_sendto_failure(void **state)
+{
+	const size_t length = NLMSG_LENGTH(sizeof(struct rtcanmsg)) +
+		2 * RTA_ALIGN(RTA_LENGTH(sizeof(unsigned int)));
+	(void) state;
+	for (size_t operation = 0; operation < 3; operation++) {
+		will_return(rule_test_socket, TEST_SOCKET_FD);
+		expect_send_request(length, -1);
+		expect_function_call(rule_test_close);
+		assert_int_equal(run_set_operation(operation), -1);
+	}
+	assert_int_equal(malloc_calls, 0);
+}
+
+static void test_get_rules_sendto_failure(void **state)
+{
+	socketcan_gw_rules_t *gw_rules = NULL;
+	(void) state;
+	will_return(rule_test_socket, TEST_SOCKET_FD);
+	expect_send_request(NLMSG_LENGTH(sizeof(struct rtcanmsg)), -1);
+	expect_function_call(rule_test_close);
+	assert_int_equal(cangw_get_rules(&gw_rules), -1);
+	assert_null(gw_rules);
+	assert_int_equal(malloc_calls, 0);
+}
+
+/* No socket expectations: starting communication would fail these tests. */
+static void test_add_rule_zero_src_ifindex(void **state)
+{
+	socketcan_gw_rule_t rule = { .src_ifindex = 0, .dst_ifindex = 2 };
+	(void) state;
+	assert_int_equal(cangw_add_rule(&rule), -3);
+	assert_int_equal(malloc_calls, 0);
+}
+
+static void test_add_rule_zero_dst_ifindex(void **state)
+{
+	socketcan_gw_rule_t rule = { .src_ifindex = 1, .dst_ifindex = 0 };
+	(void) state;
+	assert_int_equal(cangw_add_rule(&rule), -3);
+	assert_int_equal(malloc_calls, 0);
+}
+
+static void test_delete_rule_zero_src_ifindex(void **state)
+{
+	socketcan_gw_rule_t rule = { .src_ifindex = 0, .dst_ifindex = 2 };
+	(void) state;
+	assert_int_equal(cangw_delete_rule(&rule), -3);
+	assert_int_equal(malloc_calls, 0);
+}
+
+static void test_delete_rule_zero_dst_ifindex(void **state)
+{
+	socketcan_gw_rule_t rule = { .src_ifindex = 1, .dst_ifindex = 0 };
+	(void) state;
+	assert_int_equal(cangw_delete_rule(&rule), -3);
+	assert_int_equal(malloc_calls, 0);
+}
+
+static void expect_set_request_response(struct s_request_data *req)
+{
+	unsigned int src = 1, dst = 2;
+	init_req_data(req, NLM_F_REQUEST | NLM_F_ACK, RTM_NEWROUTE);
+	assert_int_equal(addattr_l(&req->nh, sizeof(*req), CGW_SRC_IF, &src, sizeof(src)), 0);
+	assert_int_equal(addattr_l(&req->nh, sizeof(*req), CGW_DST_IF, &dst, sizeof(dst)), 0);
+	will_return(rule_test_socket, TEST_SOCKET_FD);
+	expect_send_request(req->nh.nlmsg_len, (int) req->nh.nlmsg_len);
+	expect_function_call(rule_test_recv);
+	expect_function_call(rule_test_close);
+}
+
+static void test_set_request_recv_failure(void **state)
+{
+	struct s_request_data req;
+	(void) state;
+	expect_set_request_response(&req);
+	recv_error = EIO;
+	assert_int_equal(send_cangw_set_request(&req), -1);
+	assert_int_equal(malloc_calls, 0);
+}
+
+static void test_set_request_unexpected_response_type(void **state)
+{
+	struct s_request_data req, reply;
+	(void) state;
+	expect_set_request_response(&req);
+	init_req_data(&reply, 0, RTM_NEWROUTE);
+	recv_data = (const unsigned char *) &reply;
+	recv_length = reply.nh.nlmsg_len;
+	assert_int_equal(send_cangw_set_request(&req), -2);
+	assert_int_equal(malloc_calls, 0);
+}
+
+static void test_set_request_kernel_error(void **state)
+{
+	struct s_request_data req;
+	struct {
+		struct nlmsghdr header;
+		int error;
+		struct s_request_data request;
+	} reply = { 0 };
+	(void) state;
+	expect_set_request_response(&req);
+	/* A negative ACK contains the error followed by the original request. */
+	reply.header.nlmsg_type = NLMSG_ERROR;
+	reply.header.nlmsg_len = NLMSG_LENGTH(sizeof(reply.error) + req.nh.nlmsg_len);
+	reply.error = -EINVAL;
+	reply.request = req;
+	recv_data = (const unsigned char *) &reply;
+	recv_length = reply.header.nlmsg_len;
+	assert_int_equal(send_cangw_set_request(&req), -3);
+	assert_int_equal(malloc_calls, 0);
+}
+
+static void test_get_rules_recv_failure(void **state)
+{
+	socketcan_gw_rules_t *gw_rules = NULL;
+	(void) state;
+	will_return(rule_test_socket, TEST_SOCKET_FD);
+	expect_send_request(NLMSG_LENGTH(sizeof(struct rtcanmsg)),
+		(int) NLMSG_LENGTH(sizeof(struct rtcanmsg)));
+	expect_function_call(rule_test_recv);
+	expect_function_call(rule_test_close);
+	recv_error = EIO;
+	assert_int_equal(cangw_get_rules(&gw_rules), -1);
+	assert_null(gw_rules);
+	assert_int_equal(recv_calls, 1);
+	assert_int_equal(malloc_calls, 1);
+}
+
+static void test_get_rules_recv_failure_after_rules(void **state)
+{
+	socketcan_gw_rules_t *gw_rules = NULL;
+	unsigned char rxbuf[2 * sizeof(struct s_request_data)] = { 0 };
+	(void) state;
+	recv_data = rxbuf;
+	recv_length = make_listing_data(rxbuf, sizeof(rxbuf));
+	recv_error = EIO;
+	recv_error_at = 2;
+	will_return(rule_test_socket, TEST_SOCKET_FD);
+	expect_send_request(NLMSG_LENGTH(sizeof(struct rtcanmsg)),
+		(int) NLMSG_LENGTH(sizeof(struct rtcanmsg)));
+	expect_function_calls(rule_test_recv, 2);
+	expect_function_call(rule_test_close);
+	assert_int_equal(cangw_get_rules(&gw_rules), -1);
+	assert_null(gw_rules);
+	assert_int_equal(recv_calls, 2);
+	/* Container, two rules, and their pointer array must all be released. */
+	assert_int_equal(malloc_calls, 4);
+}
+
+static void test_release_rules_null(void **state)
+{
+	(void) state;
+	assert_int_equal(cangw_release_rules(NULL), -3);
+	assert_int_equal(malloc_calls, 0);
+}
+
+#define CASE(function) cmocka_unit_test_setup(function, setup)
+
+int main(void)
+{
+	const struct CMUnitTest tests[] = {
+		CASE(test_push_gw_rule_realloc_failure),
+		CASE(test_parse_listing_data_realloc_failure),
+		CASE(test_addattr_l_failure),
+		CASE(test_add_rule_zero_src_ifindex),
+		CASE(test_add_rule_zero_dst_ifindex),
+		CASE(test_delete_rule_zero_src_ifindex),
+		CASE(test_delete_rule_zero_dst_ifindex),
+		CASE(test_push_gw_rule_malloc_failure),
+		CASE(test_parse_listing_data_malloc_failures),
+		CASE(test_get_rules_malloc_failures),
+		CASE(test_set_request_socket_failure),
+		CASE(test_get_rules_socket_failure),
+		CASE(test_set_request_sendto_failure),
+		CASE(test_set_request_recv_failure),
+		CASE(test_set_request_unexpected_response_type),
+		CASE(test_set_request_kernel_error),
+		CASE(test_get_rules_sendto_failure),
+		CASE(test_get_rules_recv_failure),
+		CASE(test_get_rules_recv_failure_after_rules),
+		CASE(test_release_rules_null),
+	};
+	return cmocka_run_group_tests(tests, NULL, NULL);
+}

@@ -1,4 +1,4 @@
-bin_PROGRAMS = gwtest parsertest
+bin_PROGRAMS = gwtest gwunittest parsertest 
 
 gwtest_SOURCES = gwtest.c
 
@@ -12,6 +12,15 @@ gwtest_CFLAGS = \
 	-I$(top_srcdir)/include \
 	@CMOCKA_CFLAGS@ \
 	-D_GNU_SOURCE
+
+
+gwunittest_SOURCES = gw-unit-test.c
+
+gwunittest_LDADD = \
+	@CMOCKA_LIBS@
+
+gwunittest_CFLAGS = $(gwtest_CFLAGS)
+
 
 parsertest_SOURCES = libsocketcangw_config_test.c
 
