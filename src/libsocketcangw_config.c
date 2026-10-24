@@ -331,9 +331,6 @@ do_return:
  */
 static int cangw_parse_filters_v1(socketcan_gw_rule_t ***ppprules, size_t *parray_num, const cJSON *filters)
 {
-	cJSON *json = NULL;
-	char *jsonstring = NULL;
-	socketcan_gw_rules_t *psgr = NULL;
 	int result = -1;
 	socketcan_gw_rule_t **pprules = NULL;
 	int json_array_size = 0;
@@ -368,7 +365,6 @@ static int cangw_parse_filters_v1(socketcan_gw_rule_t ***ppprules, size_t *parra
 
 		cJSON_ArrayForEach(elem, filters) {
 			if (cJSON_IsObject(elem)) {
-				cJSON *type = NULL;
 				int ret = -1;
 
 				ret = cangw_parse_filter(&pprules[array_num], elem);
@@ -532,6 +528,33 @@ void cangw_config_release_config(socketcan_gw_rules_t *psgr)
 
 	free(psgr->rules);
 	free(psgr);
+}
+
+/**
+ * Fill ifindex values for all rules in the gateway configuration.
+ *
+ * @param [in,out]	psgr	Pointer to socketcan_gw_rules_t.
+ * @param [in]	dst_ifindex	Destination interface index.
+ * @param [in]	src_ifindex	Source interface index.
+ * @return int
+ * @retval  0 Success.
+ * @retval -1 Invalid arguments.
+ */
+int cangw_config_refill_ifindex(socketcan_gw_rules_t *psgr, unsigned int dst_ifindex, unsigned int src_ifindex)
+{
+	if (psgr == NULL) {
+		cangw_config_log("cangw: Invalid arguments in cangw_config_refill_ifindex.\n");
+		return -1;
+	}
+
+	for (size_t i = 0; i < psgr->rule_num; i++) {
+		if (psgr->rules[i] != NULL) {
+			psgr->rules[i]->dst_ifindex = dst_ifindex;
+			psgr->rules[i]->src_ifindex = src_ifindex;
+		}
+	}
+
+	return 0;
 }
 
 #ifdef LIBSOCKETCANGW_CONFIG_CHECKER

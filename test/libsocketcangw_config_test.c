@@ -646,6 +646,61 @@ static void test_json_allocation_failures(void **state)
 	json_allocation_fail_at = 0;
 }
 
+static void test_refill_ifindex_arguments(void **state)
+{
+	(void) state;
+	cangw_config_log_enable();
+	assert_int_equal(cangw_config_refill_ifindex(NULL, 11, 22), -1);
+	assert_int_equal(log_calls, 1);
+	assert_non_null(strstr(log_text, "cangw: Invalid arguments in cangw_config_refill_ifindex."));
+}
+
+static void test_refill_ifindex_empty(void **state)
+{
+	socketcan_gw_rules_t config = { 0 };
+	(void) state;
+	assert_int_equal(cangw_config_refill_ifindex(&config, 11, 22), 0);
+	assert_null(config.rules);
+	assert_int_equal(config.rule_num, 0);
+	assert_int_equal(config.array_num, 0);
+}
+
+static void test_refill_ifindex_rules(void **state)
+{
+	socketcan_gw_rule_t rules[] = {
+		{ .src_ifindex = 1, .dst_ifindex = 2,
+		  .options = SOCKETCAN_GW_RULE_FILTER | SOCKETCAN_GW_RULE_ECHO,
+		  .echo = 1, .invert_can_id = 0,
+		  .filter = { .can_id = 0x123, .can_mask = 0x7ff } },
+		{ .src_ifindex = 3, .dst_ifindex = 4,
+		  .options = SOCKETCAN_GW_RULE_FILTER,
+		  .echo = 0, .invert_can_id = 1,
+		  .filter = { .can_id = 0x456, .can_mask = 0x7f0 } }
+	};
+	const socketcan_gw_rule_t original[] = { rules[0], rules[1] };
+	/* A NULL entry must not prevent updating the following rule. */
+	socketcan_gw_rule_t *entries[] = { &rules[0], NULL, &rules[1] };
+	socketcan_gw_rules_t config = { .rule_num = 3, .rules = entries, .array_num = 3 };
+	(void) state;
+
+	assert_int_equal(cangw_config_refill_ifindex(&config, 11, 22), 0);
+	assert_ptr_equal(config.rules, entries);
+	assert_int_equal(config.rule_num, 3);
+	assert_int_equal(config.array_num, 3);
+	assert_ptr_equal(entries[0], &rules[0]);
+	assert_null(entries[1]);
+	assert_ptr_equal(entries[2], &rules[1]);
+	for (size_t i = 0; i < sizeof(rules) / sizeof(rules[0]); i++) {
+		assert_int_equal(rules[i].dst_ifindex, 11);
+		assert_int_equal(rules[i].src_ifindex, 22);
+		assert_int_equal(rules[i].filter.can_id, original[i].filter.can_id);
+		assert_int_equal(rules[i].filter.can_mask, original[i].filter.can_mask);
+		assert_int_equal(rules[i].options, original[i].options);
+		assert_int_equal(rules[i].echo, original[i].echo);
+		assert_int_equal(rules[i].invert_can_id, original[i].invert_can_id);
+	}
+}
+
 static void test_release_partial_container(void **state)
 {
 	socketcan_gw_rules_t *rules = config_test_malloc(sizeof(*rules));
@@ -705,6 +760,9 @@ int main(void)
 		CASE(test_filter_count_boundaries),
 		CASE(test_parser_allocation_failures),
 		CASE(test_json_allocation_failures),
+		CASE(test_refill_ifindex_arguments),
+		CASE(test_refill_ifindex_empty),
+		CASE(test_refill_ifindex_rules),
 		CASE(test_release_partial_container),
 		CASE(test_duplicate_checker),
 	};
