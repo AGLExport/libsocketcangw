@@ -524,6 +524,150 @@ static void argument_error_test_40(void **state) {
 	assert_true(ret == -3);
 }
 //------------------------------------------------------------------------------------------
+static void init_device_rules(socketcan_gw_rule_t values[3],
+	socketcan_gw_rule_t *entries[3], socketcan_gw_rules_t *rules)
+{
+	const unsigned int src[] = {
+		if_nametoindex("vcan0"), if_nametoindex("vcan0"), if_nametoindex("vxcan0")
+	};
+	const unsigned int dst[] = {
+		if_nametoindex("vcan1"), if_nametoindex("vxcan0"), if_nametoindex("vcan1")
+	};
+
+	memset(values, 0, 3 * sizeof(*values));
+	memset(rules, 0, sizeof(*rules));
+	for (size_t i = 0; i < 3; i++) {
+		assert_true(src[i] != 0);
+		assert_true(dst[i] != 0);
+		values[i].src_ifindex = src[i];
+		values[i].dst_ifindex = dst[i];
+		values[i].options = SOCKETCAN_GW_RULE_ECHO | SOCKETCAN_GW_RULE_FILTER;
+		values[i].echo = i != 1;
+		values[i].invert_can_id = i == 1;
+		values[i].direction = SOCKETCAN_GW_DIRECTION_IN;
+		values[i].filter.can_id = 0x101 * (i + 1);
+		values[i].filter.can_mask = 0x7ff;
+		entries[i] = &values[i];
+	}
+	rules->rules = entries;
+	rules->rule_num = 3;
+}
+
+/* Compare by CAN ID so the test does not depend on kernel listing order. */
+static void assert_device_rules(socketcan_gw_rule_t *const *expected, size_t count)
+{
+	socketcan_gw_rules_t *actual = NULL;
+
+	assert_int_equal(cangw_get_rules(&actual), 0);
+	assert_non_null(actual);
+	assert_int_equal(actual->rule_num, count);
+	for (size_t i = 0; i < count; i++) {
+		const socketcan_gw_rule_t *rule = expected[i];
+		const socketcan_gw_rule_t *found = NULL;
+		unsigned int src = rule->src_ifindex;
+		unsigned int dst = rule->dst_ifindex;
+
+		if (rule->direction == SOCKETCAN_GW_DIRECTION_OUT) {
+			src = rule->dst_ifindex;
+			dst = rule->src_ifindex;
+		}
+		for (size_t j = 0; j < actual->rule_num; j++) {
+			if (actual->rules[j]->filter.can_id == rule->filter.can_id) {
+				assert_null(found);
+				found = actual->rules[j];
+			}
+		}
+		assert_non_null(found);
+		assert_int_equal(found->src_ifindex, src);
+		assert_int_equal(found->dst_ifindex, dst);
+		assert_int_equal(found->options, rule->options);
+		assert_int_equal(found->echo, rule->echo);
+		assert_int_equal(found->invert_can_id, rule->invert_can_id);
+		assert_int_equal(found->filter.can_mask, rule->filter.can_mask);
+	}
+	assert_int_equal(cangw_release_rules(actual), 0);
+}
+
+static void add_rules_test_18(void **state)
+{
+	socketcan_gw_rule_t values[3];
+	socketcan_gw_rule_t *entries[3];
+	socketcan_gw_rules_t rules;
+	unsigned int src, dst;
+	(void) state;
+
+	init_device_rules(values, entries, &rules);
+	values[1].direction = SOCKETCAN_GW_DIRECTION_OUT;
+	src = values[1].src_ifindex;
+	dst = values[1].dst_ifindex;
+	assert_int_equal(cangw_add_rules(&rules), 0);
+	assert_device_rules(entries, 3);
+	assert_int_equal(values[1].src_ifindex, src);
+	assert_int_equal(values[1].dst_ifindex, dst);
+	assert_int_equal(values[1].direction, SOCKETCAN_GW_DIRECTION_OUT);
+}
+
+static void add_rules_test_19(void **state)
+{
+	socketcan_gw_rule_t values[3];
+	socketcan_gw_rule_t *entries[3];
+	socketcan_gw_rules_t rules;
+	(void) state;
+
+	init_device_rules(values, entries, &rules);
+	/* A nonzero invalid ifindex makes the second request fail in the kernel. */
+	values[1].src_ifindex = (unsigned int) -1;
+	assert_int_equal(cangw_add_rules(&rules), -1);
+	/* The first rule remains installed and the third rule was not added. */
+	assert_device_rules(entries, 1);
+}
+
+static void delete_rules_test_23(void **state)
+{
+	socketcan_gw_rule_t values[3];
+	socketcan_gw_rule_t *entries[3];
+	socketcan_gw_rules_t rules;
+	socketcan_gw_rules_t selected;
+	(void) state;
+
+	init_device_rules(values, entries, &rules);
+	assert_int_equal(cangw_add_rules(&rules), 0);
+	assert_device_rules(entries, 3);
+	selected = rules;
+	selected.rule_num = 2;
+	assert_int_equal(cangw_delete_rules(&selected), 0);
+	assert_device_rules(&entries[2], 1);
+	selected.rules = &entries[2];
+	selected.rule_num = 1;
+	assert_int_equal(cangw_delete_rules(&selected), 0);
+	assert_device_rules(NULL, 0);
+}
+
+static void delete_rules_test_24(void **state)
+{
+	socketcan_gw_rule_t values[3];
+	socketcan_gw_rule_t *entries[3];
+	socketcan_gw_rules_t rules;
+	socketcan_gw_rule_t missing;
+	socketcan_gw_rule_t *delete_entries[3];
+	socketcan_gw_rules_t selected;
+	(void) state;
+
+	init_device_rules(values, entries, &rules);
+	assert_int_equal(cangw_add_rules(&rules), 0);
+	assert_device_rules(entries, 3);
+	missing = values[1];
+	missing.filter.can_id = 0x777;
+	delete_entries[0] = &values[0];
+	delete_entries[1] = &missing;
+	delete_entries[2] = &values[1];
+	selected = rules;
+	selected.rules = delete_entries;
+	assert_int_equal(cangw_delete_rules(&selected), -1);
+	/* The first deletion persists; failure prevents the third deletion. */
+	assert_device_rules(&entries[1], 2);
+}
+//------------------------------------------------------------------------------------------
 static struct option long_options[] = {
 	{"add-rule", no_argument, 0, 10},
 	{"delete-rule", no_argument, 0, 20},
@@ -588,6 +732,18 @@ int main(int argc, char *argv[])
 				};
 				(void) cmocka_run_group_tests(tests, rule_setup, rule_teardown);
 			}
+			{
+				const struct CMUnitTest tests[] = {
+					cmocka_unit_test(add_rules_test_18),
+				};
+				(void) cmocka_run_group_tests(tests, rule_setup, rule_teardown);
+			}
+			{
+				const struct CMUnitTest tests[] = {
+					cmocka_unit_test(add_rules_test_19),
+				};
+				(void) cmocka_run_group_tests(tests, rule_setup, rule_teardown);
+			}
 			break;
 		}
 		case 20:
@@ -609,6 +765,18 @@ int main(int argc, char *argv[])
 					cmocka_unit_test(delete_rule_test_22),
 				};
 				(void) cmocka_run_group_tests(tests, rule_setup, rule_teardown);	
+			}
+			{
+				const struct CMUnitTest tests[] = {
+					cmocka_unit_test(delete_rules_test_23),
+				};
+				(void) cmocka_run_group_tests(tests, rule_setup, rule_teardown);
+			}
+			{
+				const struct CMUnitTest tests[] = {
+					cmocka_unit_test(delete_rules_test_24),
+				};
+				(void) cmocka_run_group_tests(tests, rule_setup, rule_teardown);
 			}
 			break;
 		}

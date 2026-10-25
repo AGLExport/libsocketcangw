@@ -482,6 +482,167 @@ do_return:
 
 /**
  * @ingroup extern
+ * cangw_add_rules - add routing rules to can gateway in array order
+ * @param gw_rules Container of rules to add. Its rule array must not be NULL.
+ *
+ * Stop at the first failure and return -1 if cangw_add_rule() fails.
+ * Previously added rules remain installed; no rollback is performed.
+ *
+ * @return 0 if all rules were added successfully
+ * @return -1 if an operation failed
+ * @return -3 if the container or its rule array is NULL
+ */
+int cangw_add_rules(socketcan_gw_rules_t *gw_rules)
+{
+	int result = -1, ret = -1;
+
+	if ((gw_rules == NULL) || (gw_rules->rules == NULL)) {
+		result = -3;
+		goto do_return;
+	}
+
+	for (size_t i = 0; i < gw_rules->rule_num; i++) {
+		ret = cangw_add_rule(gw_rules->rules[i]);
+		if (ret < 0) {
+			result = -1;
+			goto do_return;
+		}
+	}
+
+	result = 0;
+
+do_return:
+	return result;
+}
+
+/**
+ * @ingroup extern
+ * cangw_delete_rules - delete routing rules from can gateway in array order
+ * @param gw_rules Container of rules to delete. Its rule array must not be NULL.
+ *
+ * Stop at the first failure and return -1 if cangw_delete_rule() fails.
+ * Previously deleted rules are not restored.
+ *
+ * @return 0 if all rules were deleted successfully
+ * @return -1 if an operation failed
+ * @return -3 if the container or its rule array is NULL
+ */
+int cangw_delete_rules(socketcan_gw_rules_t *gw_rules)
+{
+	int result = -1, ret = -1;
+
+	if ((gw_rules == NULL) || (gw_rules->rules == NULL)) {
+		result = -3;
+		goto do_return;
+	}
+
+	for (size_t i = 0; i < gw_rules->rule_num; i++) {
+		ret = cangw_delete_rule(gw_rules->rules[i]);
+		if (ret < 0) {
+			result = -1;
+			goto do_return;
+		}
+	}
+
+	result = 0;
+
+do_return:
+	return result;
+}
+
+/**
+ * @ingroup extern
+ * cangw_push_gw_rule - push gw rule into gw_rules
+ * @param gw_rules pointer to rules structure of the can gateway.
+ * @param rule pointer to new rule to push into gw_rules. This rule copies into the new memory. This rule can be free after function call.
+ *
+ * @return 0 if push operation was successed
+ * @return -1 if operation is failed
+ */
+int cangw_push_gw_rule(socketcan_gw_rules_t *gw_rules, const socketcan_gw_rule_t *rule)
+{
+	socketcan_gw_rule_t *prule = NULL;
+	int ret = -1, result = -1;
+
+	prule = (socketcan_gw_rule_t *)malloc(sizeof(socketcan_gw_rule_t));
+	if (prule == NULL) {
+		result = -1;
+		goto do_return;
+	}
+
+	(void) memcpy(prule, rule, sizeof(socketcan_gw_rule_t));
+	ret = push_gw_rule(gw_rules, prule);
+	if (ret < 0) {
+		result = -1;
+		goto do_return;
+	}
+	prule = NULL;
+	result = 0;
+
+do_return:
+	(void) free(prule);
+
+	return result;
+}
+
+/**
+ * @ingroup extern
+ * cangw_pop_gw_rule - remove the first matching rule from gw_rules
+ * @param gw_rules Container owning the registered rules.
+ * @param rule Rule to match by all fields; it may point to a registered rule.
+ *
+ * Free the matching registered rule, compact the array and clear its old tail.
+ * Keep the array capacity and the order of the remaining rules unchanged.
+ * The caller's comparison rule is not freed unless it is the removed rule.
+ * This operation changes only the container, not the kernel gateway rules.
+ *
+ * @return 0 if a matching rule was removed
+ * @return -1 if no matching rule was found
+ * @return -3 if an argument or a nonempty container's array is NULL
+ */
+int cangw_pop_gw_rule(socketcan_gw_rules_t *gw_rules, const socketcan_gw_rule_t *rule)
+{
+	int result = -1;
+
+	if ((gw_rules == NULL) || (rule == NULL) ||
+		(gw_rules->rules == NULL)) {
+		result = -3;
+		goto do_return;
+	}
+
+	for (size_t i = 0; i < gw_rules->rule_num; i++) {
+		socketcan_gw_rule_t *entry = gw_rules->rules[i];
+
+		if (entry == NULL) {
+			continue;
+		}
+
+		if ((entry->src_ifindex != rule->src_ifindex) ||
+			(entry->dst_ifindex != rule->dst_ifindex) ||
+			(entry->options != rule->options) ||
+			(entry->echo != rule->echo) ||
+			(entry->invert_can_id != rule->invert_can_id) ||
+			(entry->direction != rule->direction) ||
+			(entry->filter.can_id != rule->filter.can_id) ||
+			(entry->filter.can_mask != rule->filter.can_mask)) {
+			continue;
+		}
+
+		(void) memmove(&gw_rules->rules[i], &gw_rules->rules[i + 1],
+			(gw_rules->rule_num - i - 1) * sizeof(*gw_rules->rules));
+		gw_rules->rule_num--;
+		gw_rules->rules[gw_rules->rule_num] = NULL;
+		(void) free(entry);
+		result = 0;
+		goto do_return;
+	}
+
+do_return:
+	return result;
+}
+
+/**
+ * @ingroup extern
  * cangw_clean_rule - delete all routing rule to can gateway
  *
  * @return 0 if success

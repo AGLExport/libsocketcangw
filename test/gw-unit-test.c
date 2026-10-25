@@ -150,48 +150,52 @@ static void *rule_test_realloc(void *pointer, size_t size)
 #undef recv
 #undef close
 
-static void test_push_gw_rule_realloc_failure(void **state)
+static void test_cangw_push_gw_rule_realloc_failure(void **state)
 {
 	socketcan_gw_rules_t *gw_rules = test_calloc(1, sizeof(*gw_rules));
-	socketcan_gw_rule_t *rules[3];
+	socketcan_gw_rule_t rules[3] = { 0 };
+	socketcan_gw_rule_t *registered[2];
+	socketcan_gw_rule_t **original;
 	(void) state;
 
 	for (size_t i = 0; i < 3; i++) {
-		rules[i] = test_calloc(1, sizeof(*rules[i]));
-		rules[i]->filter.can_id = (unsigned int) i + 1;
-		rules[i]->filter.can_mask = 0x7ff;
+		rules[i].filter.can_id = (unsigned int) i + 1;
+		rules[i].filter.can_mask = 0x7ff;
 	}
-	assert_int_equal(push_gw_rule(gw_rules, rules[0]), 0);
-	assert_int_equal(push_gw_rule(gw_rules, rules[1]), 0);
+	assert_int_equal(cangw_push_gw_rule(gw_rules, &rules[0]), 0);
+	assert_int_equal(cangw_push_gw_rule(gw_rules, &rules[1]), 0);
 	assert_int_equal(gw_rules->rule_num, 2);
 	assert_int_equal(gw_rules->array_num, 2);
-	socketcan_gw_rule_t **original = gw_rules->rules;
+	original = gw_rules->rules;
+	for (size_t i = 0; i < 2; i++)
+		registered[i] = gw_rules->rules[i];
 
 	expect_uint_value(rule_test_realloc, address, (uintptr_t) original);
 	expect_uint_value(rule_test_realloc, size, 4 * sizeof(*original));
 	will_return(rule_test_realloc, 1);
-	assert_int_equal(push_gw_rule(gw_rules, rules[2]), -1);
+	assert_int_equal(cangw_push_gw_rule(gw_rules, &rules[2]), -1);
 	assert_ptr_equal(gw_rules->rules, original);
 	assert_int_equal(gw_rules->rule_num, 2);
 	assert_int_equal(gw_rules->array_num, 2);
 	for (size_t i = 0; i < 2; i++) {
-		assert_ptr_equal(gw_rules->rules[i], rules[i]);
-		assert_int_equal(gw_rules->rules[i]->filter.can_id, i + 1);
-		assert_int_equal(gw_rules->rules[i]->filter.can_mask, 0x7ff);
+		assert_ptr_equal(gw_rules->rules[i], registered[i]);
+		assert_ptr_not_equal(gw_rules->rules[i], &rules[i]);
+		assert_memory_equal(gw_rules->rules[i], &rules[i], sizeof(rules[i]));
 	}
-	/* The rejected rule remains owned by the caller and can be retried. */
-	assert_int_equal(rules[2]->filter.can_id, 3);
+	/* The input remains owned by the caller on both success and failure. */
+	assert_int_equal(rules[2].filter.can_id, 3);
 	expect_uint_value(rule_test_realloc, address, (uintptr_t) original);
 	expect_uint_value(rule_test_realloc, size, 4 * sizeof(*original));
 	will_return(rule_test_realloc, 0);
-	assert_int_equal(push_gw_rule(gw_rules, rules[2]), 0);
+	assert_int_equal(cangw_push_gw_rule(gw_rules, &rules[2]), 0);
 	assert_int_equal(gw_rules->rule_num, 3);
 	assert_int_equal(gw_rules->array_num, 4);
 	for (size_t i = 0; i < 3; i++) {
-		assert_ptr_equal(gw_rules->rules[i], rules[i]);
-		assert_int_equal(gw_rules->rules[i]->filter.can_id, i + 1);
-		assert_int_equal(gw_rules->rules[i]->filter.can_mask, 0x7ff);
+		assert_ptr_not_equal(gw_rules->rules[i], &rules[i]);
+		assert_memory_equal(gw_rules->rules[i], &rules[i], sizeof(rules[i]));
 	}
+	for (size_t i = 0; i < 2; i++)
+		assert_ptr_equal(gw_rules->rules[i], registered[i]);
 	assert_int_equal(cangw_release_rules(gw_rules), 0);
 }
 
@@ -248,23 +252,37 @@ static size_t make_listing_data(unsigned char *buffer, size_t capacity)
 	return used;
 }
 
-static void test_push_gw_rule_malloc_failure(void **state)
+static void test_cangw_push_gw_rule_malloc_failure(void **state)
 {
-	socketcan_gw_rules_t *gw_rules = test_calloc(1, sizeof(*gw_rules));
-	socketcan_gw_rule_t *rule = test_calloc(1, sizeof(*rule));
+	const socketcan_gw_rule_t rule = {
+		.src_ifindex = 1,
+		.dst_ifindex = 2,
+		.filter = { .can_id = 0x123, .can_mask = 0x7ff }
+	};
 	(void) state;
-	rule->filter.can_id = 0x123;
-	malloc_fail_at = 1;
-	assert_int_equal(push_gw_rule(gw_rules, rule), -1);
-	assert_int_equal(malloc_calls, 1);
-	assert_null(gw_rules->rules);
-	assert_int_equal(gw_rules->rule_num, 0);
-	assert_int_equal(rule->filter.can_id, 0x123);
-	malloc_fail_at = 0;
-	assert_int_equal(push_gw_rule(gw_rules, rule), 0);
-	assert_int_equal(gw_rules->rule_num, 1);
-	assert_ptr_equal(gw_rules->rules[0], rule);
-	assert_int_equal(cangw_release_rules(gw_rules), 0);
+
+	/* Fail the rule copy allocation and the pointer array allocation. */
+	for (size_t fail_at = 1; fail_at <= 2; fail_at++) {
+		socketcan_gw_rules_t *rules = test_calloc(1, sizeof(*rules));
+
+		malloc_calls = 0;
+		malloc_fail_at = fail_at;
+		assert_int_equal(cangw_push_gw_rule(rules, &rule), -1);
+		assert_int_equal(malloc_calls, fail_at);
+		assert_int_equal(rules->rule_num, 0);
+		assert_null(rules->rules);
+
+		/* The same input remains available for a retry. */
+		malloc_calls = 0;
+		malloc_fail_at = 0;
+		assert_int_equal(cangw_push_gw_rule(rules, &rule), 0);
+		assert_int_equal(malloc_calls, 2);
+		assert_int_equal(rules->rule_num, 1);
+		assert_ptr_not_equal(rules->rules[0], &rule);
+		assert_memory_equal(rules->rules[0], &rule, sizeof(rule));
+
+		assert_int_equal(cangw_release_rules(rules), 0);
+	}
 }
 
 static void test_parse_listing_data_malloc_failures(void **state)
@@ -558,12 +576,398 @@ static void test_add_rule_directions(void **state)
 	assert_int_equal(malloc_calls, 0);
 }
 
+static int (*const bulk_operations[])(socketcan_gw_rules_t *) = {
+	cangw_add_rules, cangw_delete_rules
+};
+
+static void expect_rule_success(size_t length)
+{
+	will_return(rule_test_socket, TEST_SOCKET_FD);
+	expect_send_request(length, (int) length);
+	expect_function_call(rule_test_recv);
+	expect_function_call(rule_test_close);
+}
+
+static void test_bulk_rule_arguments(void **state)
+{
+	(void) state;
+	for (size_t operation = 0; operation < 2; operation++) {
+		socketcan_gw_rule_t rule = { .src_ifindex = 0, .dst_ifindex = 2 };
+		socketcan_gw_rule_t *entries[] = { NULL };
+		socketcan_gw_rules_t rules = { 0 };
+
+		assert_int_equal(bulk_operations[operation](NULL), -3);
+		assert_int_equal(bulk_operations[operation](&rules), -3);
+		rules.rule_num = 1;
+		assert_int_equal(bulk_operations[operation](&rules), -3);
+		rules.rules = entries;
+		rules.rule_num = 0;
+		assert_int_equal(bulk_operations[operation](&rules), 0);
+		rules.rule_num = 1;
+		assert_int_equal(bulk_operations[operation](&rules), -1);
+		entries[0] = &rule;
+		assert_int_equal(bulk_operations[operation](&rules), -1);
+		rule.src_ifindex = 1;
+		rule.dst_ifindex = 0;
+		assert_int_equal(bulk_operations[operation](&rules), -1);
+		assert_int_equal(recv_calls, 0);
+	}
+	assert_int_equal(malloc_calls, 0);
+}
+
+static void test_bulk_rule_success(void **state)
+{
+	const size_t length = NLMSG_LENGTH(sizeof(struct rtcanmsg)) +
+		2 * RTA_ALIGN(RTA_LENGTH(sizeof(unsigned int)));
+	struct {
+		struct nlmsghdr header;
+		struct nlmsgerr ack;
+	} reply = { 0 };
+	(void) state;
+	reply.header.nlmsg_type = NLMSG_ERROR;
+	reply.header.nlmsg_len = NLMSG_LENGTH(sizeof(reply.ack));
+	recv_data = (const unsigned char *) &reply;
+	recv_length = reply.header.nlmsg_len;
+	for (size_t operation = 0; operation < 2; operation++) {
+		socketcan_gw_rule_t values[] = {
+			{ .src_ifindex = 1, .dst_ifindex = 2 },
+			{ .src_ifindex = 3, .dst_ifindex = 4, .options = SOCKETCAN_GW_RULE_FILTER,
+				.filter = { .can_id = 0x123, .can_mask = 0x7ff } },
+			{ .src_ifindex = 5, .dst_ifindex = 6 }
+		};
+		socketcan_gw_rule_t *entries[] = { &values[0], &values[1], &values[2] };
+		socketcan_gw_rules_t rules = { .rule_num = 3, .rules = entries };
+		struct s_request_data sent = { 0 };
+		unsigned int src = 0, dst = 0;
+		struct rtattr *attr;
+		int remaining;
+
+		recv_calls = 0;
+		send_capture = (unsigned char *) &sent;
+		send_capture_capacity = sizeof(sent);
+		expect_rule_success(length);
+		expect_rule_success(length + RTA_ALIGN(RTA_LENGTH(sizeof(struct can_filter))));
+		expect_rule_success(length);
+		assert_int_equal(bulk_operations[operation](&rules), 0);
+		assert_int_equal(recv_calls, 3);
+		assert_int_equal(rules.rule_num, 3);
+		assert_ptr_equal(rules.rules, entries);
+		assert_int_equal(sent.nh.nlmsg_type, operation == 0 ? RTM_NEWROUTE : RTM_DELROUTE);
+		remaining = RTCAN_PAYLOAD(&sent.nh);
+		for (attr = RTCAN_RTA(&sent.rtcan); RTA_OK(attr, remaining);
+			attr = RTA_NEXT(attr, remaining)) {
+			if (attr->rta_type == CGW_SRC_IF)
+				memcpy(&src, RTA_DATA(attr), sizeof(src));
+			if (attr->rta_type == CGW_DST_IF)
+				memcpy(&dst, RTA_DATA(attr), sizeof(dst));
+		}
+		assert_int_equal(src, 5);
+		assert_int_equal(dst, 6);
+	}
+	assert_int_equal(malloc_calls, 0);
+}
+
+static void test_bulk_rule_operation_failure(void **state)
+{
+	const size_t length = NLMSG_LENGTH(sizeof(struct rtcanmsg)) +
+		2 * RTA_ALIGN(RTA_LENGTH(sizeof(unsigned int)));
+	struct {
+		struct nlmsghdr header;
+		struct nlmsgerr ack;
+	} reply = { 0 };
+	(void) state;
+	reply.header.nlmsg_type = NLMSG_ERROR;
+	reply.header.nlmsg_len = NLMSG_LENGTH(sizeof(reply.ack));
+	recv_data = (const unsigned char *) &reply;
+	recv_length = reply.header.nlmsg_len;
+	for (size_t operation = 0; operation < 2; operation++) {
+		for (size_t fail_at = 0; fail_at < 3; fail_at++) {
+			socketcan_gw_rule_t rule = { .src_ifindex = 1, .dst_ifindex = 2 };
+			socketcan_gw_rule_t *entries[] = { &rule, &rule, &rule };
+			socketcan_gw_rules_t rules = { .rule_num = 3, .rules = entries };
+
+			recv_calls = 0;
+			for (size_t i = 0; i < fail_at; i++)
+				expect_rule_success(length);
+			will_return(rule_test_socket, -1);
+			assert_int_equal(bulk_operations[operation](&rules), -1);
+			assert_int_equal(recv_calls, fail_at);
+			assert_int_equal(rules.rule_num, 3);
+		}
+	}
+	assert_int_equal(malloc_calls, 0);
+}
+
+static void test_bulk_rule_invalid_entry_after_success(void **state)
+{
+	const size_t length = NLMSG_LENGTH(sizeof(struct rtcanmsg)) +
+		2 * RTA_ALIGN(RTA_LENGTH(sizeof(unsigned int)));
+	struct {
+		struct nlmsghdr header;
+		struct nlmsgerr ack;
+	} reply = { 0 };
+	(void) state;
+	reply.header.nlmsg_type = NLMSG_ERROR;
+	reply.header.nlmsg_len = NLMSG_LENGTH(sizeof(reply.ack));
+	recv_data = (const unsigned char *) &reply;
+	recv_length = reply.header.nlmsg_len;
+	for (size_t operation = 0; operation < 2; operation++) {
+		socketcan_gw_rule_t rule = { .src_ifindex = 1, .dst_ifindex = 2 };
+		socketcan_gw_rule_t *entries[] = { &rule, NULL, &rule };
+		socketcan_gw_rules_t rules = { .rule_num = 3, .rules = entries };
+
+		recv_calls = 0;
+		expect_rule_success(length);
+		assert_int_equal(bulk_operations[operation](&rules), -1);
+		assert_int_equal(recv_calls, 1);
+		assert_int_equal(rules.rule_num, 3);
+	}
+	assert_int_equal(malloc_calls, 0);
+}
+
+static void test_pop_rule_arguments_and_missing(void **state)
+{
+	socketcan_gw_rule_t rule = { .src_ifindex = 1, .dst_ifindex = 2 };
+	socketcan_gw_rule_t *entries[] = { NULL };
+	socketcan_gw_rules_t rules = { 0 };
+	(void) state;
+
+	assert_int_equal(cangw_pop_gw_rule(NULL, &rule), -3);
+	assert_int_equal(cangw_pop_gw_rule(&rules, NULL), -3);
+	assert_int_equal(cangw_pop_gw_rule(&rules, &rule), -3);
+	rules.rule_num = 1;
+	assert_int_equal(cangw_pop_gw_rule(&rules, &rule), -3);
+	rules.rules = entries;
+	rules.rule_num = 0;
+	assert_int_equal(cangw_pop_gw_rule(&rules, &rule), -1);
+	rules.rule_num = 1;
+	assert_int_equal(cangw_pop_gw_rule(&rules, &rule), -1);
+	assert_int_equal(rules.rule_num, 1);
+	assert_null(entries[0]);
+	assert_int_equal(malloc_calls, 0);
+}
+
+static void test_pop_rule_positions(void **state)
+{
+	(void) state;
+	for (size_t position = 0; position < 3; position++) {
+		socketcan_gw_rules_t *rules = test_calloc(1, sizeof(*rules));
+		socketcan_gw_rule_t *entries[3];
+		socketcan_gw_rule_t match;
+		socketcan_gw_rule_t **array;
+		size_t remaining = 0;
+
+		rules->rule_num = 3;
+		rules->array_num = 4;
+		rules->rules = test_calloc(4, sizeof(*rules->rules));
+		array = rules->rules;
+		for (size_t i = 0; i < 3; i++) {
+			entries[i] = test_calloc(1, sizeof(*entries[i]));
+			entries[i]->src_ifindex = 1;
+			entries[i]->dst_ifindex = 2;
+			entries[i]->filter.can_id = i + 1;
+			rules->rules[i] = entries[i];
+		}
+		match = *entries[position];
+		/* Exercise both an independent value and the owned pointer itself. */
+		assert_int_equal(cangw_pop_gw_rule(rules,
+			position == 1 ? entries[position] : &match), 0);
+		assert_int_equal(rules->rule_num, 2);
+		assert_int_equal(rules->array_num, 4);
+		assert_ptr_equal(rules->rules, array);
+		for (size_t i = 0; i < 3; i++) {
+			if (i == position)
+				continue;
+			assert_ptr_equal(rules->rules[remaining], entries[i]);
+			assert_int_equal(rules->rules[remaining]->filter.can_id, i + 1);
+			remaining++;
+		}
+		assert_null(rules->rules[2]);
+		assert_int_equal(malloc_calls, 0);
+		assert_int_equal(cangw_release_rules(rules), 0);
+	}
+}
+
+static void test_pop_rule_field_matching(void **state)
+{
+	socketcan_gw_rules_t *rules = test_calloc(1, sizeof(*rules));
+	socketcan_gw_rule_t *entry = test_calloc(1, sizeof(*entry));
+	socketcan_gw_rule_t match;
+	(void) state;
+
+	entry->src_ifindex = 1;
+	entry->dst_ifindex = 2;
+	entry->options = SOCKETCAN_GW_RULE_ECHO | SOCKETCAN_GW_RULE_FILTER;
+	entry->echo = 1;
+	entry->invert_can_id = 1;
+	entry->direction = SOCKETCAN_GW_DIRECTION_OUT;
+	entry->filter.can_id = 0x123;
+	entry->filter.can_mask = 0x7ff;
+	rules->rules = test_calloc(1, sizeof(*rules->rules));
+	rules->rules[0] = entry;
+	rules->rule_num = rules->array_num = 1;
+	for (size_t field = 0; field < 8; field++) {
+		match = *entry;
+		switch (field) {
+		case 0: match.src_ifindex++; break;
+		case 1: match.dst_ifindex++; break;
+		case 2: match.options ^= SOCKETCAN_GW_RULE_ECHO; break;
+		case 3: match.echo = 0; break;
+		case 4: match.invert_can_id = 0; break;
+		case 5: match.direction = SOCKETCAN_GW_DIRECTION_IN; break;
+		case 6: match.filter.can_id++; break;
+		case 7: match.filter.can_mask++; break;
+		}
+		assert_int_equal(cangw_pop_gw_rule(rules, &match), -1);
+		assert_int_equal(rules->rule_num, 1);
+		assert_ptr_equal(rules->rules[0], entry);
+	}
+	match = *entry;
+	assert_int_equal(cangw_pop_gw_rule(rules, &match), 0);
+	assert_int_equal(rules->rule_num, 0);
+	assert_int_equal(rules->array_num, 1);
+	assert_null(rules->rules[0]);
+	assert_int_equal(match.filter.can_id, 0x123);
+	assert_int_equal(cangw_pop_gw_rule(rules, &match), -1);
+	assert_int_equal(malloc_calls, 0);
+	assert_int_equal(cangw_release_rules(rules), 0);
+}
+
+static void test_pop_rule_duplicate_values(void **state)
+{
+	socketcan_gw_rules_t *rules = test_calloc(1, sizeof(*rules));
+	socketcan_gw_rule_t match = {
+		.src_ifindex = 1, .dst_ifindex = 2, .filter = { .can_id = 0x123, .can_mask = 0x7ff }
+	};
+	socketcan_gw_rule_t *second;
+	(void) state;
+
+	rules->rules = test_calloc(3, sizeof(*rules->rules));
+	rules->rule_num = rules->array_num = 3;
+	/* Leave a NULL slot before two independently owned identical rules. */
+	for (size_t i = 1; i < 3; i++) {
+		rules->rules[i] = test_malloc(sizeof(match));
+		*rules->rules[i] = match;
+	}
+	second = rules->rules[2];
+	assert_int_equal(cangw_pop_gw_rule(rules, &match), 0);
+	assert_int_equal(rules->rule_num, 2);
+	assert_null(rules->rules[0]);
+	assert_ptr_equal(rules->rules[1], second);
+	assert_null(rules->rules[2]);
+	assert_int_equal(cangw_pop_gw_rule(rules, &match), 0);
+	assert_int_equal(rules->rule_num, 1);
+	assert_null(rules->rules[0]);
+	assert_null(rules->rules[1]);
+	assert_int_equal(cangw_pop_gw_rule(rules, &match), -1);
+	assert_int_equal(malloc_calls, 0);
+	assert_int_equal(cangw_release_rules(rules), 0);
+}
+
+static void test_push_pop_rule_reuse(void **state)
+{
+	socketcan_gw_rules_t *rules = test_calloc(1, sizeof(*rules));
+	socketcan_gw_rule_t entries[3] = { 0 };
+	socketcan_gw_rule_t *registered[3];
+	socketcan_gw_rule_t **array;
+	socketcan_gw_rule_t match;
+	(void) state;
+
+	for (size_t i = 0; i < 3; i++) {
+		entries[i].src_ifindex = 1;
+		entries[i].dst_ifindex = 2;
+		entries[i].filter.can_id = i + 1;
+		entries[i].filter.can_mask = 0x7ff;
+	}
+	assert_int_equal(cangw_push_gw_rule(rules, &entries[0]), 0);
+	assert_non_null(rules->rules);
+	assert_int_equal(rules->rule_num, 1);
+	assert_int_equal(rules->array_num, 2);
+	assert_int_equal(malloc_calls, 2);
+	array = rules->rules;
+	assert_int_equal(cangw_push_gw_rule(rules, &entries[1]), 0);
+	assert_ptr_equal(rules->rules, array);
+	assert_int_equal(rules->rule_num, 2);
+	assert_int_equal(malloc_calls, 3);
+	expect_uint_value(rule_test_realloc, address, (uintptr_t) array);
+	expect_uint_value(rule_test_realloc, size, 4 * sizeof(*array));
+	will_return(rule_test_realloc, 0);
+	assert_int_equal(cangw_push_gw_rule(rules, &entries[2]), 0);
+	assert_int_equal(rules->rule_num, 3);
+	assert_int_equal(rules->array_num, 4);
+	assert_int_equal(malloc_calls, 4);
+	for (size_t i = 0; i < 3; i++) {
+		registered[i] = rules->rules[i];
+		assert_ptr_not_equal(rules->rules[i], &entries[i]);
+		assert_memory_equal(rules->rules[i], &entries[i], sizeof(entries[i]));
+	}
+
+	array = rules->rules;
+	match = entries[1];
+	assert_int_equal(cangw_pop_gw_rule(rules, &match), 0);
+	assert_int_equal(rules->rule_num, 2);
+	assert_ptr_equal(rules->rules[0], registered[0]);
+	assert_ptr_equal(rules->rules[1], registered[2]);
+	assert_null(rules->rules[2]);
+	assert_int_equal(malloc_calls, 4);
+	assert_int_equal(cangw_push_gw_rule(rules, &match), 0);
+	assert_int_equal(rules->rule_num, 3);
+	assert_ptr_not_equal(rules->rules[2], &match);
+	assert_memory_equal(rules->rules[2], &match, sizeof(match));
+	assert_ptr_equal(rules->rules, array);
+	assert_int_equal(rules->array_num, 4);
+	assert_int_equal(malloc_calls, 5);
+
+	while (rules->rule_num != 0)
+		assert_int_equal(cangw_pop_gw_rule(rules, rules->rules[0]), 0);
+	for (size_t i = 0; i < 3; i++)
+		assert_null(rules->rules[i]);
+	assert_int_equal(cangw_pop_gw_rule(rules, &match), -1);
+	assert_int_equal(malloc_calls, 5);
+	assert_int_equal(cangw_push_gw_rule(rules, &match), 0);
+	assert_int_equal(rules->rule_num, 1);
+	assert_ptr_not_equal(rules->rules[0], &match);
+	assert_memory_equal(rules->rules[0], &match, sizeof(match));
+	assert_ptr_equal(rules->rules, array);
+	assert_int_equal(rules->array_num, 4);
+	assert_int_equal(malloc_calls, 6);
+	assert_int_equal(cangw_release_rules(rules), 0);
+}
+
+static void test_cangw_push_gw_rule_copy(void **state)
+{
+	socketcan_gw_rules_t *rules = test_calloc(1, sizeof(*rules));
+	socketcan_gw_rule_t *input = test_calloc(1, sizeof(*input));
+	socketcan_gw_rule_t expected;
+	(void) state;
+
+	input->src_ifindex = 1;
+	input->dst_ifindex = 2;
+	input->options = SOCKETCAN_GW_RULE_ECHO | SOCKETCAN_GW_RULE_FILTER;
+	input->echo = 1;
+	input->invert_can_id = 1;
+	input->direction = SOCKETCAN_GW_DIRECTION_OUT;
+	input->filter.can_id = 0x123;
+	input->filter.can_mask = 0x7ff;
+	expected = *input;
+
+	assert_int_equal(cangw_push_gw_rule(rules, input), 0);
+	assert_ptr_not_equal(rules->rules[0], input);
+
+	input->filter.can_id = 0x456;
+	assert_memory_equal(rules->rules[0], &expected, sizeof(expected));
+
+	test_free(input);
+	assert_memory_equal(rules->rules[0], &expected, sizeof(expected));
+	assert_int_equal(cangw_release_rules(rules), 0);
+}
+
 #define CASE(function) cmocka_unit_test_setup(function, setup)
 
 int main(void)
 {
 	const struct CMUnitTest tests[] = {
-		CASE(test_push_gw_rule_realloc_failure),
+		CASE(test_cangw_push_gw_rule_realloc_failure),
 		CASE(test_parse_listing_data_realloc_failure),
 		CASE(test_addattr_l_failure),
 		CASE(test_add_rule_zero_src_ifindex),
@@ -571,7 +975,8 @@ int main(void)
 		CASE(test_add_rule_directions),
 		CASE(test_delete_rule_zero_src_ifindex),
 		CASE(test_delete_rule_zero_dst_ifindex),
-		CASE(test_push_gw_rule_malloc_failure),
+		CASE(test_cangw_push_gw_rule_malloc_failure),
+		CASE(test_cangw_push_gw_rule_copy),
 		CASE(test_parse_listing_data_malloc_failures),
 		CASE(test_get_rules_malloc_failures),
 		CASE(test_set_request_socket_failure),
@@ -584,6 +989,15 @@ int main(void)
 		CASE(test_get_rules_recv_failure),
 		CASE(test_get_rules_recv_failure_after_rules),
 		CASE(test_release_rules_null),
+		CASE(test_pop_rule_arguments_and_missing),
+		CASE(test_pop_rule_positions),
+		CASE(test_pop_rule_field_matching),
+		CASE(test_pop_rule_duplicate_values),
+		CASE(test_push_pop_rule_reuse),
+		CASE(test_bulk_rule_arguments),
+		CASE(test_bulk_rule_success),
+		CASE(test_bulk_rule_operation_failure),
+		CASE(test_bulk_rule_invalid_entry_after_success),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }

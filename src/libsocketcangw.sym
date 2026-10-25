@@ -1,7 +1,11 @@
 cangw_add_rule
+cangw_add_rules
 cangw_delete_rule
+cangw_delete_rules
 cangw_clean_rule
 cangw_get_rules
+cangw_push_gw_rule
+cangw_pop_gw_rule
 cangw_release_rules
 cangw_config_load_from_file
 cangw_config_release_config
