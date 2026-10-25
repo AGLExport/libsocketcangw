@@ -394,6 +394,8 @@ int cangw_add_rule(socketcan_gw_rule_t *rule)
 {
 	int result = 0;
 	int ret = -1;
+	unsigned int src_ifindex = 0;
+	unsigned int dst_ifindex = 0;
 	struct s_request_data req;
 
 	if (rule == NULL) {
@@ -409,8 +411,16 @@ int cangw_add_rule(socketcan_gw_rule_t *rule)
 		result = -3;
 		goto do_return;
 	}
-	addattr_l(&req.nh, sizeof(req), CGW_SRC_IF, &rule->src_ifindex, sizeof(rule->src_ifindex));
-	addattr_l(&req.nh, sizeof(req), CGW_DST_IF, &rule->dst_ifindex, sizeof(rule->dst_ifindex));
+
+	if (rule->direction == SOCKETCAN_GW_DIRECTION_OUT) {
+		src_ifindex = rule->dst_ifindex;
+		dst_ifindex = rule->src_ifindex;
+	} else {
+		src_ifindex = rule->src_ifindex;
+		dst_ifindex = rule->dst_ifindex;
+	}
+	addattr_l(&req.nh, sizeof(req), CGW_SRC_IF, &src_ifindex, sizeof(src_ifindex));
+	addattr_l(&req.nh, sizeof(req), CGW_DST_IF, &dst_ifindex, sizeof(dst_ifindex));
 
 	// operate options
 	operate_rule_options(&req, rule);

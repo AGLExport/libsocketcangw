@@ -5,13 +5,33 @@
       "can_id": "0x123",
       "can_mask": "0xFFF",
       "invert": true,
-      "echo": false
+      "echo": false,
+      "direction": "in"
+    },
+    {
+      "can_id": "0x000",
+      "can_mask": "0xF00",
+      "invert": false,
+      "echo": false,
+      "direction": "in"
+    },
+    {
+      "can_id": "0x000",
+      "can_mask": "0xF00",
+      "invert": false,
+      "echo": false,
+      "direction": "out"
     },
     {
       "can_id": "0x3c0",
       "can_mask": "0xFFF",
       "invert": false,
-      "echo": false
+      "echo": false,
+      "direction": "out"
+    },
+    {
+      "can_id": "0x456",
+      "can_mask": "0x00F"
     }
   ]
 }

@@ -20,6 +20,9 @@ extern "C" {
 #define SOCKETCAN_GW_RULE_ECHO (0x00000001U)
 #define SOCKETCAN_GW_RULE_FILTER (0x00000002U)
 
+#define SOCKETCAN_GW_DIRECTION_IN (0x00000000U)
+#define SOCKETCAN_GW_DIRECTION_OUT (0x00000001U)
+
 struct s_socketcan_gw_rule {
 	unsigned int src_ifindex;
 	unsigned int dst_ifindex;
@@ -28,6 +31,7 @@ struct s_socketcan_gw_rule {
 
 	unsigned int echo;
 	unsigned int invert_can_id;
+	unsigned int direction;
 	struct can_filter filter;
 };
 typedef struct s_socketcan_gw_rule socketcan_gw_rule_t;

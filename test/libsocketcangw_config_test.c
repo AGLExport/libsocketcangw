@@ -736,6 +736,78 @@ static void test_duplicate_checker(void **state)
 	cJSON_Delete(json);
 }
 
+static void test_load_direction_values(void **state)
+{
+	static const struct {
+		const char *value;
+		unsigned int direction;
+		const char *message;
+	} cases[] = {
+		{ NULL, SOCKETCAN_GW_DIRECTION_IN, "Use default direction (in)." },
+		{ "\"in\"", SOCKETCAN_GW_DIRECTION_IN, NULL },
+		{ "\"out\"", SOCKETCAN_GW_DIRECTION_OUT, NULL },
+		{ "null", SOCKETCAN_GW_DIRECTION_IN, "Use default direction (in)." },
+		{ "true", SOCKETCAN_GW_DIRECTION_IN, "Use default direction (in)." },
+		{ "false", SOCKETCAN_GW_DIRECTION_IN, "Use default direction (in)." },
+		{ "0", SOCKETCAN_GW_DIRECTION_IN, "Use default direction (in)." },
+		{ "{}", SOCKETCAN_GW_DIRECTION_IN, "Use default direction (in)." },
+		{ "[]", SOCKETCAN_GW_DIRECTION_IN, "Use default direction (in)." },
+		{ "\"\"", SOCKETCAN_GW_DIRECTION_IN, "Invalid direction value in filter: \n" },
+		{ "\"OUT\"", SOCKETCAN_GW_DIRECTION_IN, "Invalid direction value in filter: OUT\n" },
+		{ "\"invalid\"", SOCKETCAN_GW_DIRECTION_IN, "Invalid direction value in filter: invalid\n" }
+	};
+	(void) state;
+	cangw_config_log_enable();
+	for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+		char text[256];
+		socketcan_gw_rules_t *rules = NULL;
+		if (cases[i].value == NULL)
+			snprintf(text, sizeof(text), "{\"version\":1,\"filters\":[%s]}", VALID_FILTER);
+		else
+			snprintf(text, sizeof(text),
+				"{\"version\":1,\"filters\":[{\"can_id\":\"0x123\","
+				"\"can_mask\":\"0x7ff\",\"direction\":%s}]}", cases[i].value);
+		set_input(text);
+		log_size = log_calls = 0;
+		log_text[0] = '\0';
+		assert_int_equal(cangw_config_load_from_file(&rules, "config.json"), 0);
+		assert_non_null(rules);
+		assert_int_equal(rules->rule_num, 1);
+		assert_rule(rules->rules[0], 0x123, 0x7ff, 0, 0);
+		assert_int_equal(rules->rules[0]->direction, cases[i].direction);
+		if (cases[i].message != NULL)
+			assert_non_null(strstr(log_text, cases[i].message));
+		else
+			assert_null(strstr(log_text, "direction"));
+		cangw_config_release_config(rules);
+	}
+}
+
+static void test_load_mixed_directions(void **state)
+{
+	socketcan_gw_rules_t *rules = NULL;
+	const unsigned int expected[] = {
+		SOCKETCAN_GW_DIRECTION_OUT, SOCKETCAN_GW_DIRECTION_IN,
+		SOCKETCAN_GW_DIRECTION_IN, SOCKETCAN_GW_DIRECTION_IN,
+		SOCKETCAN_GW_DIRECTION_OUT
+	};
+	(void) state;
+	set_input("{\"version\":1,\"filters\":["
+		"{\"can_id\":\"0x123\",\"can_mask\":\"0x7ff\",\"direction\":\"out\"},"
+		"{\"can_id\":\"0x123\",\"can_mask\":\"0x7ff\",\"direction\":\"invalid\"},"
+		VALID_FILTER ","
+		"{\"can_id\":\"0x123\",\"can_mask\":\"0x7ff\",\"direction\":\"in\"},"
+		"{\"can_id\":\"0x123\",\"can_mask\":\"0x7ff\",\"direction\":\"out\"}]}");
+	assert_int_equal(cangw_config_load_from_file(&rules, "config.json"), 0);
+	assert_non_null(rules);
+	assert_int_equal(rules->rule_num, sizeof(expected) / sizeof(expected[0]));
+	for (size_t i = 0; i < sizeof(expected) / sizeof(expected[0]); i++) {
+		assert_rule(rules->rules[i], 0x123, 0x7ff, 0, 0);
+		assert_int_equal(rules->rules[i]->direction, expected[i]);
+	}
+	cangw_config_release_config(rules);
+}
+
 #define CASE(function) cmocka_unit_test_setup_teardown(function, setup, teardown)
 
 int main(void)
@@ -751,6 +823,8 @@ int main(void)
 		CASE(test_file_size_boundary),
 		CASE(test_json_and_version_errors),
 		CASE(test_load_success),
+		CASE(test_load_direction_values),
+		CASE(test_load_mixed_directions),
 		CASE(test_preexisting_version_and_duplicate_policy),
 		CASE(test_hex_values),
 		CASE(test_filter_arguments),

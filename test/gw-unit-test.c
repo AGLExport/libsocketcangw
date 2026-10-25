@@ -35,6 +35,8 @@ static const unsigned char *recv_data;
 static size_t recv_length;
 static int recv_error;
 static size_t recv_calls, recv_error_at;
+static unsigned char *send_capture;
+static size_t send_capture_capacity;
 
 static int setup(void **state)
 {
@@ -44,6 +46,8 @@ static int setup(void **state)
 	recv_length = 0;
 	recv_error = 0;
 	recv_calls = recv_error_at = 0;
+	send_capture = NULL;
+	send_capture_capacity = 0;
 	return 0;
 }
 
@@ -83,6 +87,10 @@ static ssize_t rule_test_sendto(int fd, const void *buffer, size_t length, int f
 	assert_int_equal(nladdr->nl_pid, 0);
 	assert_int_equal(nladdr->nl_groups, 0);
 	assert_int_equal(((const struct nlmsghdr *) buffer)->nlmsg_len, length);
+	if (send_capture != NULL) {
+		assert_true(length <= send_capture_capacity);
+		memcpy(send_capture, buffer, length);
+	}
 	result = mock_type(int);
 	if (result < 0)
 		errno = ENOBUFS;
@@ -497,6 +505,59 @@ static void test_release_rules_null(void **state)
 	assert_int_equal(malloc_calls, 0);
 }
 
+static void test_add_rule_directions(void **state)
+{
+	static const struct {
+		unsigned int direction, src, dst;
+	} cases[] = {
+		{ SOCKETCAN_GW_DIRECTION_IN, 11, 22 },
+		{ SOCKETCAN_GW_DIRECTION_OUT, 22, 11 }
+	};
+	const size_t length = NLMSG_LENGTH(sizeof(struct rtcanmsg)) +
+		2 * RTA_ALIGN(RTA_LENGTH(sizeof(unsigned int)));
+	(void) state;
+	for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+		socketcan_gw_rule_t rule = {
+			.src_ifindex = 11, .dst_ifindex = 22, .direction = cases[i].direction
+		};
+		struct s_request_data sent = { 0 };
+		struct {
+			struct nlmsghdr header;
+			struct nlmsgerr ack;
+		} reply = { 0 };
+		unsigned int src = 0, dst = 0;
+		struct rtattr *attr;
+		int remaining;
+
+		reply.header.nlmsg_type = NLMSG_ERROR;
+		reply.header.nlmsg_len = NLMSG_LENGTH(sizeof(reply.ack));
+		recv_data = (const unsigned char *) &reply;
+		recv_length = reply.header.nlmsg_len;
+		send_capture = (unsigned char *) &sent;
+		send_capture_capacity = sizeof(sent);
+		will_return(rule_test_socket, TEST_SOCKET_FD);
+		expect_send_request(length, (int) length);
+		expect_function_call(rule_test_recv);
+		expect_function_call(rule_test_close);
+		assert_int_equal(cangw_add_rule(&rule), 0);
+		assert_int_equal(sent.nh.nlmsg_type, RTM_NEWROUTE);
+		remaining = RTCAN_PAYLOAD(&sent.nh);
+		for (attr = RTCAN_RTA(&sent.rtcan); RTA_OK(attr, remaining);
+			attr = RTA_NEXT(attr, remaining)) {
+			if (attr->rta_type == CGW_SRC_IF)
+				memcpy(&src, RTA_DATA(attr), sizeof(src));
+			if (attr->rta_type == CGW_DST_IF)
+				memcpy(&dst, RTA_DATA(attr), sizeof(dst));
+		}
+		assert_int_equal(src, cases[i].src);
+		assert_int_equal(dst, cases[i].dst);
+		assert_int_equal(rule.src_ifindex, 11);
+		assert_int_equal(rule.dst_ifindex, 22);
+		assert_int_equal(rule.direction, cases[i].direction);
+	}
+	assert_int_equal(malloc_calls, 0);
+}
+
 #define CASE(function) cmocka_unit_test_setup(function, setup)
 
 int main(void)
@@ -507,6 +568,7 @@ int main(void)
 		CASE(test_addattr_l_failure),
 		CASE(test_add_rule_zero_src_ifindex),
 		CASE(test_add_rule_zero_dst_ifindex),
+		CASE(test_add_rule_directions),
 		CASE(test_delete_rule_zero_src_ifindex),
 		CASE(test_delete_rule_zero_dst_ifindex),
 		CASE(test_push_gw_rule_malloc_failure),

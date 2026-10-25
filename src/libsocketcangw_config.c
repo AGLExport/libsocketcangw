@@ -292,6 +292,21 @@ static int cangw_parse_filter(socketcan_gw_rule_t** pprule, const cJSON *filter)
 		cangw_config_log("cangw: No echo entry in filter. Use default (false).\n");
 	}
 
+	type = cJSON_GetObjectItemCaseSensitive(filter, "direction");
+	if (cJSON_IsString(type) && type->valuestring != NULL) {
+		if (strcmp(type->valuestring, "out") == 0) {
+			rule.direction = SOCKETCAN_GW_DIRECTION_OUT;
+		} else if (strcmp(type->valuestring, "in") == 0) {
+			rule.direction = SOCKETCAN_GW_DIRECTION_IN;
+		} else {
+			rule.direction = SOCKETCAN_GW_DIRECTION_IN;
+			cangw_config_log("cangw: Invalid direction value in filter: %s\n", type->valuestring);
+		}
+	} else {
+		rule.direction = SOCKETCAN_GW_DIRECTION_IN;
+		cangw_config_log("cangw: Use default direction (in).\n");
+	}
+
 	prule = (socketcan_gw_rule_t*)malloc(sizeof(socketcan_gw_rule_t));
 	if (prule == NULL) {
 		result = -3;
@@ -305,6 +320,7 @@ static int cangw_parse_filter(socketcan_gw_rule_t** pprule, const cJSON *filter)
 	prule->filter.can_mask = rule.filter.can_mask;
 	prule->echo = rule.echo;
 	prule->invert_can_id = rule.invert_can_id;
+	prule->direction = rule.direction;
 	prule->options |= SOCKETCAN_GW_RULE_FILTER;
 	if (rule.echo == 1) {
 		prule->options |= SOCKETCAN_GW_RULE_ECHO;

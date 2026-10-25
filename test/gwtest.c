@@ -358,6 +358,60 @@ static void add_rule_test_16(void **state) {
 	cangw_release_rules(gw_rules);
 }
 //------------------------------------------------------------------------------------------
+static void add_rule_test_17(void **state) {
+	int ret = -1;
+	socketcan_gw_rule_t gw_rule[2];
+	socketcan_gw_rules_t *gw_rules = NULL;
+
+	memset(&gw_rule[0], 0, sizeof(gw_rule[0]));
+	memset(&gw_rule[1], 0, sizeof(gw_rule[1]));
+
+	gw_rule[0].src_ifindex = if_nametoindex("vcan0");
+	gw_rule[0].dst_ifindex = if_nametoindex("vcan1");
+	gw_rule[0].options |= SOCKETCAN_GW_RULE_ECHO;
+	gw_rule[0].echo = 1;
+	gw_rule[0].direction = SOCKETCAN_GW_DIRECTION_IN;
+	gw_rule[0].options |= SOCKETCAN_GW_RULE_FILTER;
+	gw_rule[0].invert_can_id = 0;
+	gw_rule[0].filter.can_id = 0x001;
+	gw_rule[0].filter.can_mask = 0x0ff;
+
+	gw_rule[1].src_ifindex = if_nametoindex("vxcan0");
+	gw_rule[1].dst_ifindex = if_nametoindex("vcan0");
+	gw_rule[1].direction = SOCKETCAN_GW_DIRECTION_OUT;
+	gw_rule[1].options |= SOCKETCAN_GW_RULE_FILTER;
+	gw_rule[1].invert_can_id = 0;
+	gw_rule[1].filter.can_id = 0x00f;
+	gw_rule[1].filter.can_mask = 0xff0;
+
+	ret = cangw_add_rule(&gw_rule[1]);
+	assert_true(ret == 0);
+
+	ret = cangw_add_rule(&gw_rule[0]);
+	assert_true(ret == 0);
+
+	ret = cangw_get_rules(&gw_rules);
+	assert_true(ret == 0);
+	assert_non_null(gw_rules);
+	assert_true(gw_rules->rule_num == 2);
+	assert_true(gw_rules->rules[0]->src_ifindex == if_nametoindex("vcan0"));
+	assert_true(gw_rules->rules[0]->dst_ifindex == if_nametoindex("vcan1"));
+	assert_true(gw_rules->rules[0]->options == (SOCKETCAN_GW_RULE_ECHO | SOCKETCAN_GW_RULE_FILTER));
+	assert_true(gw_rules->rules[0]->echo == 1);
+	assert_true(gw_rules->rules[0]->invert_can_id == 0);
+	assert_true(gw_rules->rules[0]->filter.can_id == 0x001);
+	assert_true(gw_rules->rules[0]->filter.can_mask == 0x0ff);
+	assert_true(gw_rules->rules[1]->src_ifindex == if_nametoindex("vcan0"));
+	assert_true(gw_rules->rules[1]->dst_ifindex == if_nametoindex("vxcan0"));
+	assert_true(gw_rules->rules[1]->options == (SOCKETCAN_GW_RULE_ECHO | SOCKETCAN_GW_RULE_FILTER));
+	assert_true(gw_rules->rules[1]->echo == 0);
+	assert_true(gw_rules->rules[1]->invert_can_id == 0);
+	assert_true(gw_rules->rules[1]->filter.can_id == 0x00f);
+	assert_true(gw_rules->rules[1]->filter.can_mask == 0xff0);
+
+	cangw_release_rules(gw_rules);
+}
+//------------------------------------------------------------------------------------------
 static void delete_rule_test_20(void **state) {
 	int ret = -1;
 	socketcan_gw_rule_t gw_rule;
@@ -527,6 +581,12 @@ int main(int argc, char *argv[])
 					cmocka_unit_test(add_rule_test_16),
 				};
 				(void) cmocka_run_group_tests(tests, rule_setup, rule_teardown);	
+			}
+			{
+				const struct CMUnitTest tests[] = {
+					cmocka_unit_test(add_rule_test_17),
+				};
+				(void) cmocka_run_group_tests(tests, rule_setup, rule_teardown);
 			}
 			break;
 		}
