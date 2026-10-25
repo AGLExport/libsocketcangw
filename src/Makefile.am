@@ -16,7 +16,7 @@ libsocketcangw_la_CFLAGS = \
 	$(LIBCJSON_CFLAGS)
 
 libsocketcangw_la_LDFLAGS = \
-	-export-symbols $(top_srcdir)/src/libsocketcangw.sym -version-info 0:0:0
+	-export-symbols $(top_srcdir)/src/libsocketcangw.sym -version-info 1:0:0
 
 
 bin_PROGRAMS = cangw-config-check
