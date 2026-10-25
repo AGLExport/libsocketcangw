@@ -321,10 +321,6 @@ static int cangw_parse_filter(socketcan_gw_rule_t** pprule, const cJSON *filter)
 	prule->echo = rule.echo;
 	prule->invert_can_id = rule.invert_can_id;
 	prule->direction = rule.direction;
-	prule->options |= SOCKETCAN_GW_RULE_FILTER;
-	if (rule.echo == 1) {
-		prule->options |= SOCKETCAN_GW_RULE_ECHO;
-	}
 
 	(*pprule) = prule;
 	result = 0;

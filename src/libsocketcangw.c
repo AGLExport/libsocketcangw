@@ -267,7 +267,6 @@ static int parse_listing_data(socketcan_gw_rules_t *gw_rules, unsigned char *rxb
 			rta = RTA_NEXT(rta, rtlen);
 		}
 
-		rule->options = (SOCKETCAN_GW_RULE_ECHO | SOCKETCAN_GW_RULE_FILTER);
 		// Pick up the echo status from the netlink message
 		if ((rtc->flags & CGW_FLAGS_CAN_ECHO) == CGW_FLAGS_CAN_ECHO) {
 			rule->echo = 1;
@@ -327,7 +326,7 @@ error_return:
  * @param flags value of the nlmsg_flags
  * @param type value of the nlmsg_type
  *
- * Set a netlink request data from rule to req.
+ * Set Netlink request data from rule to req.
  */
 static void init_req_data(struct s_request_data *req, unsigned short flags, unsigned short type)
 {
@@ -346,38 +345,33 @@ static void init_req_data(struct s_request_data *req, unsigned short flags, unsi
 
 /**
  * @ingroup intern
- * @brief operate_rule_options - operate to options of gw rule
+ * @brief operate_rule_options - set echo and filter attributes for a rule
  *
- * @param req pointer to s_request_data structure that is wrote the options.
+ * @param req Request whose echo flag and filter attribute are set.
  * @param rule pointer to source data of the gw configuration rule
  *
- * Set a netlink request data from rule to req.
+ * Set Netlink request data from rule to req.
  */
 static void operate_rule_options(struct s_request_data *req, socketcan_gw_rule_t *rule)
 {
-	if ((rule->options & SOCKETCAN_GW_RULE_ECHO) == SOCKETCAN_GW_RULE_ECHO) {
-		if (rule->echo == 1) {
-			req->rtcan.flags |= CGW_FLAGS_CAN_ECHO;
-		}
+	struct can_filter filter = rule->filter;
+
+	if (rule->echo == 1) {
+		req->rtcan.flags |= CGW_FLAGS_CAN_ECHO;
+	} else {
+		req->rtcan.flags &= ~CGW_FLAGS_CAN_ECHO;
 	}
 
-	if ((rule->options & SOCKETCAN_GW_RULE_FILTER) == SOCKETCAN_GW_RULE_FILTER) {
-		struct can_filter filter;
-		memset(&filter, 0, sizeof(struct can_filter));
-
-		filter.can_id = rule->filter.can_id;
-		filter.can_mask = rule->filter.can_mask;
-		if (rule->invert_can_id == 1) {
-			filter.can_id = filter.can_id | CAN_INV_FILTER;
-		}
-
-		addattr_l(
-			&req->nh,
-			sizeof(struct s_request_data),
-			CGW_FILTER,
-			&filter,
-			sizeof(struct can_filter));
+	if (rule->invert_can_id == 1) {
+		filter.can_id |= CAN_INV_FILTER;
 	}
+
+	addattr_l(
+		&req->nh,
+		sizeof(struct s_request_data),
+		CGW_FILTER,
+		&filter,
+		sizeof(filter));
 }
 
 /**
@@ -387,8 +381,8 @@ static void operate_rule_options(struct s_request_data *req, socketcan_gw_rule_t
  *
  * Send a Netlink request and wait for its acknowledgement. For direction OUT,
  * swap the source and destination indices in the request. Other direction
- * values use the indices as stored in rule. Apply echo and filter settings
- * when their corresponding option bits are enabled.
+ * values use the indices as stored in rule. Enable echo only when echo is 1
+ * and always include the filter. A zero mask with invert disabled matches all IDs.
  * The caller retains ownership of rule; its contents are not modified.
  *
  * @return 0 if the kernel acknowledged the rule addition successfully
@@ -428,7 +422,7 @@ int cangw_add_rule(socketcan_gw_rule_t *rule)
 	addattr_l(&req.nh, sizeof(req), CGW_SRC_IF, &src_ifindex, sizeof(src_ifindex));
 	addattr_l(&req.nh, sizeof(req), CGW_DST_IF, &dst_ifindex, sizeof(dst_ifindex));
 
-	// operate options
+	// Set echo and filter attributes
 	operate_rule_options(&req, rule);
 
 	ret = send_cangw_set_request(&req);
@@ -449,7 +443,7 @@ do_return:
  * Send a Netlink request using the source and destination indices stored in
  * rule and wait for its acknowledgement. Both indices must be nonzero and
  * must describe the actual kernel route; direction does not swap them.
- * Include echo and filter settings according to their option bits.
+ * Enable echo only when echo is 1 and always include the filter.
  * The caller retains ownership of rule; its contents are not modified or freed.
  *
  * @return 0 if the kernel acknowledged the rule deletion successfully
@@ -479,7 +473,7 @@ int cangw_delete_rule(socketcan_gw_rule_t *rule)
 	addattr_l(&req.nh, sizeof(req), CGW_SRC_IF, &rule->src_ifindex, sizeof(rule->src_ifindex));
 	addattr_l(&req.nh, sizeof(req), CGW_DST_IF, &rule->dst_ifindex, sizeof(rule->dst_ifindex));
 
-	// operate options
+	// Set echo and filter attributes
 	operate_rule_options(&req, rule);
 
 	ret = send_cangw_set_request(&req);
@@ -498,7 +492,7 @@ do_return:
  * @param gw_rules Non-NULL container whose rules array must also be non-NULL.
  *
  * Call cangw_add_rule() for each of the rule_num entries, using its direction
- * and option handling. A zero rule count succeeds if the array is non-NULL.
+ * and echo/filter handling. A zero rule count succeeds if the array is non-NULL.
  * Stop at the first failure and return -1, including invalid individual rules.
  * Previously added rules remain installed; no rollback is performed.
  * The caller retains ownership of the container, array and rules. Their
@@ -621,7 +615,7 @@ do_return:
  * @param gw_rules Container owning the registered rules; its array must be non-NULL.
  * @param rule Rule to match by all fields; it may point to a registered rule.
  *
- * Skip NULL entries and compare the interface indices, options, echo, invert,
+ * Skip NULL entries and compare the interface indices, echo, invert,
  * direction, CAN ID and CAN mask. Free the first matching registered rule,
  * compact the array, decrement rule_num and clear its old tail.
  * Keep the array capacity and the order of the remaining rules unchanged.
@@ -653,7 +647,6 @@ int cangw_pop_gw_rule(socketcan_gw_rules_t *gw_rules, const socketcan_gw_rule_t 
 
 		if ((entry->src_ifindex != rule->src_ifindex) ||
 			(entry->dst_ifindex != rule->dst_ifindex) ||
-			(entry->options != rule->options) ||
 			(entry->echo != rule->echo) ||
 			(entry->invert_can_id != rule->invert_can_id) ||
 			(entry->direction != rule->direction) ||

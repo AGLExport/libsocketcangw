@@ -368,11 +368,13 @@ static void test_get_rules_socket_failure(void **state)
 static void test_set_request_sendto_failure(void **state)
 {
 	const size_t length = NLMSG_LENGTH(sizeof(struct rtcanmsg)) +
-		2 * RTA_ALIGN(RTA_LENGTH(sizeof(unsigned int)));
+		2 * RTA_ALIGN(RTA_LENGTH(sizeof(unsigned int))) +
+		RTA_ALIGN(RTA_LENGTH(sizeof(struct can_filter)));
 	(void) state;
 	for (size_t operation = 0; operation < 3; operation++) {
 		will_return(rule_test_socket, TEST_SOCKET_FD);
-		expect_send_request(length, -1);
+		expect_send_request(operation == 2 ?
+			length - RTA_ALIGN(RTA_LENGTH(sizeof(struct can_filter))) : length, -1);
 		expect_function_call(rule_test_close);
 		assert_int_equal(run_set_operation(operation), -1);
 	}
@@ -532,7 +534,8 @@ static void test_add_rule_directions(void **state)
 		{ SOCKETCAN_GW_DIRECTION_OUT, 22, 11 }
 	};
 	const size_t length = NLMSG_LENGTH(sizeof(struct rtcanmsg)) +
-		2 * RTA_ALIGN(RTA_LENGTH(sizeof(unsigned int)));
+		2 * RTA_ALIGN(RTA_LENGTH(sizeof(unsigned int))) +
+		RTA_ALIGN(RTA_LENGTH(sizeof(struct can_filter)));
 	(void) state;
 	for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
 		socketcan_gw_rule_t rule = {
@@ -618,7 +621,8 @@ static void test_bulk_rule_arguments(void **state)
 static void test_bulk_rule_success(void **state)
 {
 	const size_t length = NLMSG_LENGTH(sizeof(struct rtcanmsg)) +
-		2 * RTA_ALIGN(RTA_LENGTH(sizeof(unsigned int)));
+		2 * RTA_ALIGN(RTA_LENGTH(sizeof(unsigned int))) +
+		RTA_ALIGN(RTA_LENGTH(sizeof(struct can_filter)));
 	struct {
 		struct nlmsghdr header;
 		struct nlmsgerr ack;
@@ -631,7 +635,7 @@ static void test_bulk_rule_success(void **state)
 	for (size_t operation = 0; operation < 2; operation++) {
 		socketcan_gw_rule_t values[] = {
 			{ .src_ifindex = 1, .dst_ifindex = 2 },
-			{ .src_ifindex = 3, .dst_ifindex = 4, .options = SOCKETCAN_GW_RULE_FILTER,
+			{ .src_ifindex = 3, .dst_ifindex = 4,
 				.filter = { .can_id = 0x123, .can_mask = 0x7ff } },
 			{ .src_ifindex = 5, .dst_ifindex = 6 }
 		};
@@ -646,7 +650,7 @@ static void test_bulk_rule_success(void **state)
 		send_capture = (unsigned char *) &sent;
 		send_capture_capacity = sizeof(sent);
 		expect_rule_success(length);
-		expect_rule_success(length + RTA_ALIGN(RTA_LENGTH(sizeof(struct can_filter))));
+		expect_rule_success(length);
 		expect_rule_success(length);
 		assert_int_equal(bulk_operations[operation](&rules), 0);
 		assert_int_equal(recv_calls, 3);
@@ -670,7 +674,8 @@ static void test_bulk_rule_success(void **state)
 static void test_bulk_rule_operation_failure(void **state)
 {
 	const size_t length = NLMSG_LENGTH(sizeof(struct rtcanmsg)) +
-		2 * RTA_ALIGN(RTA_LENGTH(sizeof(unsigned int)));
+		2 * RTA_ALIGN(RTA_LENGTH(sizeof(unsigned int))) +
+		RTA_ALIGN(RTA_LENGTH(sizeof(struct can_filter)));
 	struct {
 		struct nlmsghdr header;
 		struct nlmsgerr ack;
@@ -701,7 +706,8 @@ static void test_bulk_rule_operation_failure(void **state)
 static void test_bulk_rule_invalid_entry_after_success(void **state)
 {
 	const size_t length = NLMSG_LENGTH(sizeof(struct rtcanmsg)) +
-		2 * RTA_ALIGN(RTA_LENGTH(sizeof(unsigned int)));
+		2 * RTA_ALIGN(RTA_LENGTH(sizeof(unsigned int))) +
+		RTA_ALIGN(RTA_LENGTH(sizeof(struct can_filter)));
 	struct {
 		struct nlmsghdr header;
 		struct nlmsgerr ack;
@@ -797,7 +803,6 @@ static void test_pop_rule_field_matching(void **state)
 
 	entry->src_ifindex = 1;
 	entry->dst_ifindex = 2;
-	entry->options = SOCKETCAN_GW_RULE_ECHO | SOCKETCAN_GW_RULE_FILTER;
 	entry->echo = 1;
 	entry->invert_can_id = 1;
 	entry->direction = SOCKETCAN_GW_DIRECTION_OUT;
@@ -806,17 +811,16 @@ static void test_pop_rule_field_matching(void **state)
 	rules->rules = test_calloc(1, sizeof(*rules->rules));
 	rules->rules[0] = entry;
 	rules->rule_num = rules->array_num = 1;
-	for (size_t field = 0; field < 8; field++) {
+	for (size_t field = 0; field < 7; field++) {
 		match = *entry;
 		switch (field) {
 		case 0: match.src_ifindex++; break;
 		case 1: match.dst_ifindex++; break;
-		case 2: match.options ^= SOCKETCAN_GW_RULE_ECHO; break;
-		case 3: match.echo = 0; break;
-		case 4: match.invert_can_id = 0; break;
-		case 5: match.direction = SOCKETCAN_GW_DIRECTION_IN; break;
-		case 6: match.filter.can_id++; break;
-		case 7: match.filter.can_mask++; break;
+		case 2: match.echo = 0; break;
+		case 3: match.invert_can_id = 0; break;
+		case 4: match.direction = SOCKETCAN_GW_DIRECTION_IN; break;
+		case 5: match.filter.can_id++; break;
+		case 6: match.filter.can_mask++; break;
 		}
 		assert_int_equal(cangw_pop_gw_rule(rules, &match), -1);
 		assert_int_equal(rules->rule_num, 1);
@@ -943,7 +947,6 @@ static void test_cangw_push_gw_rule_copy(void **state)
 
 	input->src_ifindex = 1;
 	input->dst_ifindex = 2;
-	input->options = SOCKETCAN_GW_RULE_ECHO | SOCKETCAN_GW_RULE_FILTER;
 	input->echo = 1;
 	input->invert_can_id = 1;
 	input->direction = SOCKETCAN_GW_DIRECTION_OUT;
@@ -962,6 +965,81 @@ static void test_cangw_push_gw_rule_copy(void **state)
 	assert_int_equal(cangw_release_rules(rules), 0);
 }
 
+static void test_rule_echo_and_filter(void **state)
+{
+	static const struct {
+		unsigned int echo, invert;
+		canid_t id, mask;
+	} cases[] = {
+		{ 0, 0, 0, 0 },
+		{ 1, 0, 0x123, 0x7ff },
+		{ 1, 1, 0x456, 0x7f0 },
+		{ 2, 0, 0, 0 }
+	};
+	int (*const operations[])(socketcan_gw_rule_t *) = {
+		cangw_add_rule, cangw_delete_rule
+	};
+	const size_t length = NLMSG_LENGTH(sizeof(struct rtcanmsg)) +
+		2 * RTA_ALIGN(RTA_LENGTH(sizeof(unsigned int))) +
+		RTA_ALIGN(RTA_LENGTH(sizeof(struct can_filter)));
+	struct {
+		struct nlmsghdr header;
+		struct nlmsgerr ack;
+	} reply = { 0 };
+	(void) state;
+
+	reply.header.nlmsg_type = NLMSG_ERROR;
+	reply.header.nlmsg_len = NLMSG_LENGTH(sizeof(reply.ack));
+	recv_data = (const unsigned char *) &reply;
+	recv_length = reply.header.nlmsg_len;
+	for (size_t operation = 0; operation < 2; operation++) {
+		for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+			socketcan_gw_rule_t rule = {
+				.src_ifindex = 11, .dst_ifindex = 22,
+				.echo = cases[i].echo, .invert_can_id = cases[i].invert,
+				.filter = { .can_id = cases[i].id, .can_mask = cases[i].mask }
+			};
+			const socketcan_gw_rule_t original = rule;
+			struct s_request_data sent = { 0 }, reset;
+			struct rtattr *attr;
+			unsigned int filters = 0;
+			int remaining;
+
+			/* OFF must also clear an echo flag already set in the request. */
+			init_req_data(&reset, NLM_F_REQUEST | NLM_F_ACK, RTM_NEWROUTE);
+			reset.rtcan.flags |= CGW_FLAGS_CAN_ECHO;
+			operate_rule_options(&reset, &rule);
+			assert_int_equal(reset.rtcan.flags & CGW_FLAGS_CAN_ECHO,
+				rule.echo == 1 ? CGW_FLAGS_CAN_ECHO : 0);
+
+			send_capture = (unsigned char *) &sent;
+			send_capture_capacity = sizeof(sent);
+			expect_rule_success(length);
+			assert_int_equal(operations[operation](&rule), 0);
+			assert_int_equal(sent.nh.nlmsg_type,
+				operation == 0 ? RTM_NEWROUTE : RTM_DELROUTE);
+			assert_int_equal(sent.rtcan.flags & CGW_FLAGS_CAN_ECHO,
+				rule.echo == 1 ? CGW_FLAGS_CAN_ECHO : 0);
+			remaining = RTCAN_PAYLOAD(&sent.nh);
+			for (attr = RTCAN_RTA(&sent.rtcan); RTA_OK(attr, remaining);
+				attr = RTA_NEXT(attr, remaining)) {
+				if (attr->rta_type == CGW_FILTER) {
+					struct can_filter filter;
+					assert_int_equal(RTA_PAYLOAD(attr), sizeof(filter));
+					memcpy(&filter, RTA_DATA(attr), sizeof(filter));
+					assert_int_equal(filter.can_id,
+						cases[i].id | (cases[i].invert ? CAN_INV_FILTER : 0));
+					assert_int_equal(filter.can_mask, cases[i].mask);
+					filters++;
+				}
+			}
+			assert_int_equal(filters, 1);
+			assert_memory_equal(&rule, &original, sizeof(rule));
+		}
+	}
+	assert_int_equal(malloc_calls, 0);
+}
+
 #define CASE(function) cmocka_unit_test_setup(function, setup)
 
 int main(void)
@@ -973,6 +1051,7 @@ int main(void)
 		CASE(test_add_rule_zero_src_ifindex),
 		CASE(test_add_rule_zero_dst_ifindex),
 		CASE(test_add_rule_directions),
+		CASE(test_rule_echo_and_filter),
 		CASE(test_delete_rule_zero_src_ifindex),
 		CASE(test_delete_rule_zero_dst_ifindex),
 		CASE(test_cangw_push_gw_rule_malloc_failure),

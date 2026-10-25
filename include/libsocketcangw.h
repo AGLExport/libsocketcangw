@@ -17,8 +17,6 @@
 extern "C" {
 #endif
 
-#define SOCKETCAN_GW_RULE_ECHO (0x00000001U)
-#define SOCKETCAN_GW_RULE_FILTER (0x00000002U)
 
 #define SOCKETCAN_GW_DIRECTION_IN (0x00000000U)
 #define SOCKETCAN_GW_DIRECTION_OUT (0x00000001U)
@@ -26,8 +24,6 @@ extern "C" {
 struct s_socketcan_gw_rule {
 	unsigned int src_ifindex;
 	unsigned int dst_ifindex;
-
-	unsigned int options;
 
 	unsigned int echo;
 	unsigned int invert_can_id;

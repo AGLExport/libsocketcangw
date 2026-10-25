@@ -242,7 +242,6 @@ static void assert_rule(const socketcan_gw_rule_t *rule, uint32_t id, uint32_t m
 	assert_int_equal(rule->filter.can_mask, mask);
 	assert_int_equal(rule->echo, echo);
 	assert_int_equal(rule->invert_can_id, invert);
-	assert_int_equal(rule->options, SOCKETCAN_GW_RULE_FILTER | (echo ? SOCKETCAN_GW_RULE_ECHO : 0));
 }
 
 static void expect_load_error(int code, const char *message)
@@ -669,11 +668,9 @@ static void test_refill_ifindex_rules(void **state)
 {
 	socketcan_gw_rule_t rules[] = {
 		{ .src_ifindex = 1, .dst_ifindex = 2,
-		  .options = SOCKETCAN_GW_RULE_FILTER | SOCKETCAN_GW_RULE_ECHO,
 		  .echo = 1, .invert_can_id = 0,
 		  .filter = { .can_id = 0x123, .can_mask = 0x7ff } },
 		{ .src_ifindex = 3, .dst_ifindex = 4,
-		  .options = SOCKETCAN_GW_RULE_FILTER,
 		  .echo = 0, .invert_can_id = 1,
 		  .filter = { .can_id = 0x456, .can_mask = 0x7f0 } }
 	};
@@ -695,7 +692,6 @@ static void test_refill_ifindex_rules(void **state)
 		assert_int_equal(rules[i].src_ifindex, 22);
 		assert_int_equal(rules[i].filter.can_id, original[i].filter.can_id);
 		assert_int_equal(rules[i].filter.can_mask, original[i].filter.can_mask);
-		assert_int_equal(rules[i].options, original[i].options);
 		assert_int_equal(rules[i].echo, original[i].echo);
 		assert_int_equal(rules[i].invert_can_id, original[i].invert_can_id);
 	}

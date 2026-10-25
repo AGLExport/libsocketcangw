@@ -76,10 +76,8 @@ static void add_rule_test_10(void **state) {
 	gw_rule.src_ifindex = if_nametoindex("vcan0");
 	gw_rule.dst_ifindex = if_nametoindex("vcan1");
 
-	gw_rule.options |= SOCKETCAN_GW_RULE_ECHO;
 	gw_rule.echo = 1;
 
-	gw_rule.options |= SOCKETCAN_GW_RULE_FILTER;
 	gw_rule.invert_can_id = 0;
 	gw_rule.filter.can_id = 0x3C0;
 	gw_rule.filter.can_mask = 0xff0;
@@ -93,7 +91,6 @@ static void add_rule_test_10(void **state) {
 	assert_true(gw_rules->rule_num == 1);
 	assert_true(gw_rules->rules[0]->src_ifindex == if_nametoindex("vcan0"));
 	assert_true(gw_rules->rules[0]->dst_ifindex == if_nametoindex("vcan1"));
-	assert_true(gw_rules->rules[0]->options == (SOCKETCAN_GW_RULE_ECHO | SOCKETCAN_GW_RULE_FILTER));
 	assert_true(gw_rules->rules[0]->echo == 1);
 	assert_true(gw_rules->rules[0]->invert_can_id == 0);
 	assert_true(gw_rules->rules[0]->filter.can_id == 0x3C0);
@@ -112,10 +109,8 @@ static void add_rule_test_11(void **state) {
 	gw_rule.src_ifindex = if_nametoindex("vcan0");
 	gw_rule.dst_ifindex = if_nametoindex("vxcan0");
 
-	gw_rule.options |= SOCKETCAN_GW_RULE_ECHO;
 	gw_rule.echo = 0;
 
-	gw_rule.options |= SOCKETCAN_GW_RULE_FILTER;
 	gw_rule.invert_can_id = 0;
 	gw_rule.filter.can_id = 0x3C0;
 	gw_rule.filter.can_mask = 0xff0;
@@ -129,7 +124,6 @@ static void add_rule_test_11(void **state) {
 	assert_true(gw_rules->rule_num == 1);
 	assert_true(gw_rules->rules[0]->src_ifindex == if_nametoindex("vcan0"));
 	assert_true(gw_rules->rules[0]->dst_ifindex == if_nametoindex("vxcan0"));
-	assert_true(gw_rules->rules[0]->options == (SOCKETCAN_GW_RULE_ECHO | SOCKETCAN_GW_RULE_FILTER));
 	assert_true(gw_rules->rules[0]->echo == 0);
 	assert_true(gw_rules->rules[0]->invert_can_id == 0);
 	assert_true(gw_rules->rules[0]->filter.can_id == 0x3C0);
@@ -148,10 +142,8 @@ static void add_rule_test_12(void **state) {
 	gw_rule.src_ifindex = if_nametoindex("vxcan0");
 	gw_rule.dst_ifindex = if_nametoindex("vcan0");
 
-	gw_rule.options |= SOCKETCAN_GW_RULE_ECHO;
 	gw_rule.echo = 0;
 
-	gw_rule.options |= SOCKETCAN_GW_RULE_FILTER;
 	gw_rule.invert_can_id = 0;
 	gw_rule.filter.can_id = 0x188;
 	gw_rule.filter.can_mask = 0xfff;
@@ -165,7 +157,6 @@ static void add_rule_test_12(void **state) {
 	assert_true(gw_rules->rule_num == 1);
 	assert_true(gw_rules->rules[0]->src_ifindex == if_nametoindex("vxcan0"));
 	assert_true(gw_rules->rules[0]->dst_ifindex == if_nametoindex("vcan0"));
-	assert_true(gw_rules->rules[0]->options == (SOCKETCAN_GW_RULE_ECHO | SOCKETCAN_GW_RULE_FILTER));
 	assert_true(gw_rules->rules[0]->echo == 0);
 	assert_true(gw_rules->rules[0]->invert_can_id == 0);
 	assert_true(gw_rules->rules[0]->filter.can_id == 0x188);
@@ -184,16 +175,13 @@ static void add_rule_test_13(void **state) {
 
 	gw_rule[0].src_ifindex = if_nametoindex("vcan0");
 	gw_rule[0].dst_ifindex = if_nametoindex("vcan1");
-	gw_rule[0].options |= SOCKETCAN_GW_RULE_ECHO;
 	gw_rule[0].echo = 1;
-	gw_rule[0].options |= SOCKETCAN_GW_RULE_FILTER;
 	gw_rule[0].invert_can_id = 0;
 	gw_rule[0].filter.can_id = 0x001;
 	gw_rule[0].filter.can_mask = 0x0ff;
 
 	gw_rule[1].src_ifindex = if_nametoindex("vxcan0");
 	gw_rule[1].dst_ifindex = if_nametoindex("vcan0");
-	gw_rule[1].options |= SOCKETCAN_GW_RULE_FILTER;
 	gw_rule[1].invert_can_id = 0;
 	gw_rule[1].filter.can_id = 0x00f;
 	gw_rule[1].filter.can_mask = 0xff0;
@@ -210,14 +198,12 @@ static void add_rule_test_13(void **state) {
 	assert_true(gw_rules->rule_num == 2);
 	assert_true(gw_rules->rules[0]->src_ifindex == if_nametoindex("vcan0"));
 	assert_true(gw_rules->rules[0]->dst_ifindex == if_nametoindex("vcan1"));
-	assert_true(gw_rules->rules[0]->options == (SOCKETCAN_GW_RULE_ECHO | SOCKETCAN_GW_RULE_FILTER));
 	assert_true(gw_rules->rules[0]->echo == 1);
 	assert_true(gw_rules->rules[0]->invert_can_id == 0);
 	assert_true(gw_rules->rules[0]->filter.can_id == 0x001);
 	assert_true(gw_rules->rules[0]->filter.can_mask == 0x0ff);
 	assert_true(gw_rules->rules[1]->src_ifindex == if_nametoindex("vxcan0"));
 	assert_true(gw_rules->rules[1]->dst_ifindex == if_nametoindex("vcan0"));
-	assert_true(gw_rules->rules[1]->options == (SOCKETCAN_GW_RULE_ECHO | SOCKETCAN_GW_RULE_FILTER));
 	assert_true(gw_rules->rules[1]->echo == 0);
 	assert_true(gw_rules->rules[1]->invert_can_id == 0);
 	assert_true(gw_rules->rules[1]->filter.can_id == 0x00f);
@@ -237,10 +223,8 @@ static void add_rule_test_14(void **state) {
 	gw_rule.src_ifindex = if_nametoindex("vcan0");
 	gw_rule.dst_ifindex = if_nametoindex("vcan1");
 
-	gw_rule.options |= SOCKETCAN_GW_RULE_ECHO;
 	gw_rule.echo = 1;
 
-	gw_rule.options |= SOCKETCAN_GW_RULE_FILTER;
 	gw_rule.invert_can_id = 0;
 
 	canid_t id = 1;
@@ -260,7 +244,6 @@ static void add_rule_test_14(void **state) {
 		id--;
 		assert_true(gw_rules->rules[i]->src_ifindex == if_nametoindex("vcan0"));
 		assert_true(gw_rules->rules[i]->dst_ifindex == if_nametoindex("vcan1"));
-		assert_true(gw_rules->rules[i]->options == (SOCKETCAN_GW_RULE_ECHO | SOCKETCAN_GW_RULE_FILTER));
 		assert_true(gw_rules->rules[i]->echo == 1);
 		assert_true(gw_rules->rules[i]->invert_can_id == 0);
 		assert_true(gw_rules->rules[i]->filter.can_id == id);
@@ -280,10 +263,8 @@ static void add_rule_test_15(void **state) {
 	gw_rule.src_ifindex = if_nametoindex("vxcan0");
 	gw_rule.dst_ifindex = if_nametoindex("vcan0");
 
-	gw_rule.options |= SOCKETCAN_GW_RULE_ECHO;
 	gw_rule.echo = 0;
 
-	gw_rule.options |= SOCKETCAN_GW_RULE_FILTER;
 	gw_rule.invert_can_id = 1;
 	gw_rule.filter.can_id = 0x188;
 	gw_rule.filter.can_mask = 0xfff;
@@ -297,7 +278,6 @@ static void add_rule_test_15(void **state) {
 	assert_true(gw_rules->rule_num == 1);
 	assert_true(gw_rules->rules[0]->src_ifindex == if_nametoindex("vxcan0"));
 	assert_true(gw_rules->rules[0]->dst_ifindex == if_nametoindex("vcan0"));
-	assert_true(gw_rules->rules[0]->options == (SOCKETCAN_GW_RULE_ECHO | SOCKETCAN_GW_RULE_FILTER));
 	assert_true(gw_rules->rules[0]->echo == 0);
 	assert_true(gw_rules->rules[0]->invert_can_id == 1);
 	assert_true(gw_rules->rules[0]->filter.can_id == 0x188);
@@ -316,16 +296,13 @@ static void add_rule_test_16(void **state) {
 
 	gw_rule[0].src_ifindex = if_nametoindex("vcan0");
 	gw_rule[0].dst_ifindex = if_nametoindex("vcan1");
-	gw_rule[0].options |= SOCKETCAN_GW_RULE_ECHO;
 	gw_rule[0].echo = 1;
-	gw_rule[0].options |= SOCKETCAN_GW_RULE_FILTER;
 	gw_rule[0].invert_can_id = 0;
 	gw_rule[0].filter.can_id = 0x001;
 	gw_rule[0].filter.can_mask = 0x0ff;
 
 	gw_rule[1].src_ifindex = if_nametoindex("vxcan0");
 	gw_rule[1].dst_ifindex = if_nametoindex("vcan0");
-	gw_rule[1].options |= SOCKETCAN_GW_RULE_FILTER;
 	gw_rule[1].invert_can_id = 1;
 	gw_rule[1].filter.can_id = 0x00f;
 	gw_rule[1].filter.can_mask = 0xff0;
@@ -342,14 +319,12 @@ static void add_rule_test_16(void **state) {
 	assert_true(gw_rules->rule_num == 2);
 	assert_true(gw_rules->rules[0]->src_ifindex == if_nametoindex("vcan0"));
 	assert_true(gw_rules->rules[0]->dst_ifindex == if_nametoindex("vcan1"));
-	assert_true(gw_rules->rules[0]->options == (SOCKETCAN_GW_RULE_ECHO | SOCKETCAN_GW_RULE_FILTER));
 	assert_true(gw_rules->rules[0]->echo == 1);
 	assert_true(gw_rules->rules[0]->invert_can_id == 0);
 	assert_true(gw_rules->rules[0]->filter.can_id == 0x001);
 	assert_true(gw_rules->rules[0]->filter.can_mask == 0x0ff);
 	assert_true(gw_rules->rules[1]->src_ifindex == if_nametoindex("vxcan0"));
 	assert_true(gw_rules->rules[1]->dst_ifindex == if_nametoindex("vcan0"));
-	assert_true(gw_rules->rules[1]->options == (SOCKETCAN_GW_RULE_ECHO | SOCKETCAN_GW_RULE_FILTER));
 	assert_true(gw_rules->rules[1]->echo == 0);
 	assert_true(gw_rules->rules[1]->invert_can_id == 1);
 	assert_true(gw_rules->rules[1]->filter.can_id == 0x00f);
@@ -368,10 +343,8 @@ static void add_rule_test_17(void **state) {
 
 	gw_rule[0].src_ifindex = if_nametoindex("vcan0");
 	gw_rule[0].dst_ifindex = if_nametoindex("vcan1");
-	gw_rule[0].options |= SOCKETCAN_GW_RULE_ECHO;
 	gw_rule[0].echo = 1;
 	gw_rule[0].direction = SOCKETCAN_GW_DIRECTION_IN;
-	gw_rule[0].options |= SOCKETCAN_GW_RULE_FILTER;
 	gw_rule[0].invert_can_id = 0;
 	gw_rule[0].filter.can_id = 0x001;
 	gw_rule[0].filter.can_mask = 0x0ff;
@@ -379,7 +352,6 @@ static void add_rule_test_17(void **state) {
 	gw_rule[1].src_ifindex = if_nametoindex("vxcan0");
 	gw_rule[1].dst_ifindex = if_nametoindex("vcan0");
 	gw_rule[1].direction = SOCKETCAN_GW_DIRECTION_OUT;
-	gw_rule[1].options |= SOCKETCAN_GW_RULE_FILTER;
 	gw_rule[1].invert_can_id = 0;
 	gw_rule[1].filter.can_id = 0x00f;
 	gw_rule[1].filter.can_mask = 0xff0;
@@ -396,14 +368,12 @@ static void add_rule_test_17(void **state) {
 	assert_true(gw_rules->rule_num == 2);
 	assert_true(gw_rules->rules[0]->src_ifindex == if_nametoindex("vcan0"));
 	assert_true(gw_rules->rules[0]->dst_ifindex == if_nametoindex("vcan1"));
-	assert_true(gw_rules->rules[0]->options == (SOCKETCAN_GW_RULE_ECHO | SOCKETCAN_GW_RULE_FILTER));
 	assert_true(gw_rules->rules[0]->echo == 1);
 	assert_true(gw_rules->rules[0]->invert_can_id == 0);
 	assert_true(gw_rules->rules[0]->filter.can_id == 0x001);
 	assert_true(gw_rules->rules[0]->filter.can_mask == 0x0ff);
 	assert_true(gw_rules->rules[1]->src_ifindex == if_nametoindex("vcan0"));
 	assert_true(gw_rules->rules[1]->dst_ifindex == if_nametoindex("vxcan0"));
-	assert_true(gw_rules->rules[1]->options == (SOCKETCAN_GW_RULE_ECHO | SOCKETCAN_GW_RULE_FILTER));
 	assert_true(gw_rules->rules[1]->echo == 0);
 	assert_true(gw_rules->rules[1]->invert_can_id == 0);
 	assert_true(gw_rules->rules[1]->filter.can_id == 0x00f);
@@ -423,10 +393,8 @@ static void delete_rule_test_20(void **state) {
 	gw_rule.src_ifindex = if_nametoindex("vcan0");
 	gw_rule.dst_ifindex = if_nametoindex("vcan1");
 
-	gw_rule.options |= SOCKETCAN_GW_RULE_ECHO;
 	gw_rule.echo = 1;
 
-	gw_rule.options |= SOCKETCAN_GW_RULE_FILTER;
 	gw_rule.filter.can_id = 0x3C0;
 	gw_rule.filter.can_mask = 0xff0;
 
@@ -455,10 +423,8 @@ static void delete_rule_test_21(void **state) {
 	gw_rule.src_ifindex = if_nametoindex("vcan0");
 	gw_rule.dst_ifindex = if_nametoindex("vxcan0");
 
-	gw_rule.options |= SOCKETCAN_GW_RULE_ECHO;
 	gw_rule.echo = 0;
 
-	gw_rule.options |= SOCKETCAN_GW_RULE_FILTER;
 	gw_rule.filter.can_id = 0x123;
 	gw_rule.filter.can_mask = 0x000;
 
@@ -487,10 +453,8 @@ static void delete_rule_test_22(void **state) {
 	gw_rule.src_ifindex = if_nametoindex("vxcan0");
 	gw_rule.dst_ifindex = if_nametoindex("vcan0");
 
-	gw_rule.options |= SOCKETCAN_GW_RULE_ECHO;
 	gw_rule.echo = 0;
 
-	gw_rule.options |= SOCKETCAN_GW_RULE_FILTER;
 	gw_rule.filter.can_id = 0x188;
 	gw_rule.filter.can_mask = 0xfff;
 
@@ -541,7 +505,6 @@ static void init_device_rules(socketcan_gw_rule_t values[3],
 		assert_true(dst[i] != 0);
 		values[i].src_ifindex = src[i];
 		values[i].dst_ifindex = dst[i];
-		values[i].options = SOCKETCAN_GW_RULE_ECHO | SOCKETCAN_GW_RULE_FILTER;
 		values[i].echo = i != 1;
 		values[i].invert_can_id = i == 1;
 		values[i].direction = SOCKETCAN_GW_DIRECTION_IN;
@@ -580,7 +543,6 @@ static void assert_device_rules(socketcan_gw_rule_t *const *expected, size_t cou
 		assert_non_null(found);
 		assert_int_equal(found->src_ifindex, src);
 		assert_int_equal(found->dst_ifindex, dst);
-		assert_int_equal(found->options, rule->options);
 		assert_int_equal(found->echo, rule->echo);
 		assert_int_equal(found->invert_can_id, rule->invert_can_id);
 		assert_int_equal(found->filter.can_mask, rule->filter.can_mask);
@@ -668,6 +630,24 @@ static void delete_rules_test_24(void **state)
 	assert_device_rules(&entries[1], 2);
 }
 //------------------------------------------------------------------------------------------
+static void add_rule_zero_mask_test(void **state)
+{
+	socketcan_gw_rule_t rule = {
+		.src_ifindex = if_nametoindex("vcan0"),
+		.dst_ifindex = if_nametoindex("vcan1"),
+		.echo = 0, .invert_can_id = 0,
+		.direction = SOCKETCAN_GW_DIRECTION_IN,
+		.filter = { .can_id = 0, .can_mask = 0 }
+	};
+	socketcan_gw_rule_t *entries[] = { &rule };
+	(void) state;
+
+	assert_int_equal(cangw_add_rule(&rule), 0);
+	assert_device_rules(entries, 1);
+	assert_int_equal(cangw_delete_rule(&rule), 0);
+	assert_device_rules(NULL, 0);
+}
+//------------------------------------------------------------------------------------------
 static struct option long_options[] = {
 	{"add-rule", no_argument, 0, 10},
 	{"delete-rule", no_argument, 0, 20},
@@ -741,6 +721,12 @@ int main(int argc, char *argv[])
 			{
 				const struct CMUnitTest tests[] = {
 					cmocka_unit_test(add_rules_test_19),
+				};
+				(void) cmocka_run_group_tests(tests, rule_setup, rule_teardown);
+			}
+			{
+				const struct CMUnitTest tests[] = {
+					cmocka_unit_test(add_rule_zero_mask_test),
 				};
 				(void) cmocka_run_group_tests(tests, rule_setup, rule_teardown);
 			}
