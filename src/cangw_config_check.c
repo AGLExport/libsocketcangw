@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -30,6 +31,22 @@ static void report_json_error(const char *file, const char *text, const char *en
 		}
 	}
 	cangw_config_log("cangw: Invalid JSON in '%s' at line %lu, column %lu.\n", file, line, column);
+}
+
+static void print_rules(socketcan_gw_rule_t *const *rules,const char *file,size_t count)
+{
+	fprintf(stdout, "cangw: Configuration '%s' is valid (%zu filters).\n", file, count);
+
+	for (size_t i = 0; i < count; i++) {
+		const socketcan_gw_rule_t *rule = rules[i];
+
+		fprintf(stdout,"Rule %zu: can_id=0x%08" PRIx32
+			", can_mask=0x%08" PRIx32 ", invert=%s, echo=%s, direction=%s\n",
+			i + 1, (uint32_t) rule->filter.can_id, (uint32_t) rule->filter.can_mask,
+			rule->invert_can_id ? "true " : "false",
+			rule->echo ? "true " : "false",
+			rule->direction == SOCKETCAN_GW_DIRECTION_OUT ? "out" : "in");
+	}
 }
 
 static int check_file(const char *file)
@@ -72,7 +89,7 @@ static int check_file(const char *file)
 	if (cangw_parse_filters_v1(&rules, &count, filters) != 0)
 		goto done;
 
-	printf("cangw: Configuration '%s' is valid (%zu filters).\n", file, count);
+	print_rules(rules, file, count);
 	result = EXIT_SUCCESS;
 
 done:
