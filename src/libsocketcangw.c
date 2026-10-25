@@ -440,9 +440,10 @@ do_return:
  * cangw_delete_rule - delete one routing rule from the kernel CAN gateway
  * @param rule Non-NULL rule identifying the installed rule to delete.
  *
- * Send a Netlink request using the source and destination indices stored in
- * rule and wait for its acknowledgement. Both indices must be nonzero and
- * must describe the actual kernel route; direction does not swap them.
+ * Send a Netlink request and wait for its acknowledgement. Both interface
+ * indices must be nonzero. For direction OUT, swap the source and destination
+ * indices in the request, using the same mapping as cangw_add_rule().
+ * Other direction values use the indices as stored in rule.
  * Enable echo only when echo is 1 and always include the filter.
  * The caller retains ownership of rule; its contents are not modified or freed.
  *
@@ -455,6 +456,8 @@ int cangw_delete_rule(socketcan_gw_rule_t *rule)
 {
 	int result = 0;
 	int ret = -1;
+	unsigned int src_ifindex = 0;
+	unsigned int dst_ifindex = 0;
 	struct s_request_data req;
 
 	if (rule == NULL) {
@@ -470,8 +473,16 @@ int cangw_delete_rule(socketcan_gw_rule_t *rule)
 		result = -3;
 		goto do_return;
 	}
-	addattr_l(&req.nh, sizeof(req), CGW_SRC_IF, &rule->src_ifindex, sizeof(rule->src_ifindex));
-	addattr_l(&req.nh, sizeof(req), CGW_DST_IF, &rule->dst_ifindex, sizeof(rule->dst_ifindex));
+
+	if (rule->direction == SOCKETCAN_GW_DIRECTION_OUT) {
+		src_ifindex = rule->dst_ifindex;
+		dst_ifindex = rule->src_ifindex;
+	} else {
+		src_ifindex = rule->src_ifindex;
+		dst_ifindex = rule->dst_ifindex;
+	}
+	addattr_l(&req.nh, sizeof(req), CGW_SRC_IF, &src_ifindex, sizeof(src_ifindex));
+	addattr_l(&req.nh, sizeof(req), CGW_DST_IF, &dst_ifindex, sizeof(dst_ifindex));
 
 	// Set echo and filter attributes
 	operate_rule_options(&req, rule);
@@ -530,8 +541,9 @@ do_return:
  * cangw_delete_rules - delete routing rules from the kernel CAN gateway in array order
  * @param gw_rules Non-NULL container whose rules array must also be non-NULL.
  *
- * Call cangw_delete_rule() for each of the rule_num entries. Each rule must
- * contain the actual kernel source and destination indices used for deletion.
+ * Call cangw_delete_rule() for each of the rule_num entries, using its
+ * direction and echo/filter handling. OUT rules swap source and destination
+ * indices in each request, using the same mapping as cangw_add_rules().
  * A zero rule count succeeds if the array is non-NULL.
  * Stop at the first failure and return -1, including invalid individual rules.
  * Previously deleted rules are not restored.

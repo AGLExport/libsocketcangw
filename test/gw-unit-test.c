@@ -525,7 +525,8 @@ static void test_release_rules_null(void **state)
 	assert_int_equal(malloc_calls, 0);
 }
 
-static void test_add_rule_directions(void **state)
+static void check_rule_directions(int (*operation)(socketcan_gw_rule_t *),
+	unsigned short message_type)
 {
 	static const struct {
 		unsigned int direction, src, dst;
@@ -536,7 +537,6 @@ static void test_add_rule_directions(void **state)
 	const size_t length = NLMSG_LENGTH(sizeof(struct rtcanmsg)) +
 		2 * RTA_ALIGN(RTA_LENGTH(sizeof(unsigned int))) +
 		RTA_ALIGN(RTA_LENGTH(sizeof(struct can_filter)));
-	(void) state;
 	for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
 		socketcan_gw_rule_t rule = {
 			.src_ifindex = 11, .dst_ifindex = 22, .direction = cases[i].direction
@@ -560,8 +560,8 @@ static void test_add_rule_directions(void **state)
 		expect_send_request(length, (int) length);
 		expect_function_call(rule_test_recv);
 		expect_function_call(rule_test_close);
-		assert_int_equal(cangw_add_rule(&rule), 0);
-		assert_int_equal(sent.nh.nlmsg_type, RTM_NEWROUTE);
+		assert_int_equal(operation(&rule), 0);
+		assert_int_equal(sent.nh.nlmsg_type, message_type);
 		remaining = RTCAN_PAYLOAD(&sent.nh);
 		for (attr = RTCAN_RTA(&sent.rtcan); RTA_OK(attr, remaining);
 			attr = RTA_NEXT(attr, remaining)) {
@@ -577,6 +577,18 @@ static void test_add_rule_directions(void **state)
 		assert_int_equal(rule.direction, cases[i].direction);
 	}
 	assert_int_equal(malloc_calls, 0);
+}
+
+static void test_add_rule_directions(void **state)
+{
+	(void) state;
+	check_rule_directions(cangw_add_rule, RTM_NEWROUTE);
+}
+
+static void test_delete_rule_directions(void **state)
+{
+	(void) state;
+	check_rule_directions(cangw_delete_rule, RTM_DELROUTE);
 }
 
 static int (*const bulk_operations[])(socketcan_gw_rules_t *) = {
@@ -637,7 +649,7 @@ static void test_bulk_rule_success(void **state)
 			{ .src_ifindex = 1, .dst_ifindex = 2 },
 			{ .src_ifindex = 3, .dst_ifindex = 4,
 				.filter = { .can_id = 0x123, .can_mask = 0x7ff } },
-			{ .src_ifindex = 5, .dst_ifindex = 6 }
+			{ .src_ifindex = 5, .dst_ifindex = 6, .direction = SOCKETCAN_GW_DIRECTION_OUT }
 		};
 		socketcan_gw_rule_t *entries[] = { &values[0], &values[1], &values[2] };
 		socketcan_gw_rules_t rules = { .rule_num = 3, .rules = entries };
@@ -665,8 +677,8 @@ static void test_bulk_rule_success(void **state)
 			if (attr->rta_type == CGW_DST_IF)
 				memcpy(&dst, RTA_DATA(attr), sizeof(dst));
 		}
-		assert_int_equal(src, 5);
-		assert_int_equal(dst, 6);
+		assert_int_equal(src, 6);
+		assert_int_equal(dst, 5);
 	}
 	assert_int_equal(malloc_calls, 0);
 }
@@ -1051,6 +1063,7 @@ int main(void)
 		CASE(test_add_rule_zero_src_ifindex),
 		CASE(test_add_rule_zero_dst_ifindex),
 		CASE(test_add_rule_directions),
+		CASE(test_delete_rule_directions),
 		CASE(test_rule_echo_and_filter),
 		CASE(test_delete_rule_zero_src_ifindex),
 		CASE(test_delete_rule_zero_dst_ifindex),

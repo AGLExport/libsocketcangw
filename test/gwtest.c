@@ -593,6 +593,7 @@ static void delete_rules_test_23(void **state)
 	(void) state;
 
 	init_device_rules(values, entries, &rules);
+	values[1].direction = SOCKETCAN_GW_DIRECTION_OUT;
 	assert_int_equal(cangw_add_rules(&rules), 0);
 	assert_device_rules(entries, 3);
 	selected = rules;
@@ -645,6 +646,40 @@ static void add_rule_zero_mask_test(void **state)
 	assert_int_equal(cangw_add_rule(&rule), 0);
 	assert_device_rules(entries, 1);
 	assert_int_equal(cangw_delete_rule(&rule), 0);
+	assert_device_rules(NULL, 0);
+}
+//------------------------------------------------------------------------------------------
+static void delete_rule_direction_test(void **state)
+{
+	socketcan_gw_rule_t rules[2] = {
+		{
+			.src_ifindex = if_nametoindex("vcan0"),
+			.dst_ifindex = if_nametoindex("vcan1"),
+			.echo = 1, .invert_can_id = 0,
+			.direction = SOCKETCAN_GW_DIRECTION_IN,
+			.filter = { .can_id = 0x321, .can_mask = 0x7ff }
+		}
+	};
+	socketcan_gw_rule_t *remaining[] = { &rules[0] };
+	socketcan_gw_rules_t *actual = NULL;
+	(void) state;
+
+	/* Identical filters in opposite directions expose deletion of the wrong route. */
+	rules[1] = rules[0];
+	rules[1].direction = SOCKETCAN_GW_DIRECTION_OUT;
+	assert_int_equal(cangw_add_rule(&rules[0]), 0);
+	assert_int_equal(cangw_add_rule(&rules[1]), 0);
+	assert_int_equal(cangw_get_rules(&actual), 0);
+	assert_non_null(actual);
+	assert_int_equal(actual->rule_num, 2);
+	assert_int_equal(cangw_release_rules(actual), 0);
+
+	assert_int_equal(cangw_delete_rule(&rules[1]), 0);
+	assert_device_rules(remaining, 1);
+	assert_int_equal(rules[1].src_ifindex, rules[0].src_ifindex);
+	assert_int_equal(rules[1].dst_ifindex, rules[0].dst_ifindex);
+	assert_int_equal(rules[1].direction, SOCKETCAN_GW_DIRECTION_OUT);
+	assert_int_equal(cangw_delete_rule(&rules[0]), 0);
 	assert_device_rules(NULL, 0);
 }
 //------------------------------------------------------------------------------------------
@@ -761,6 +796,12 @@ int main(int argc, char *argv[])
 			{
 				const struct CMUnitTest tests[] = {
 					cmocka_unit_test(delete_rules_test_24),
+				};
+				(void) cmocka_run_group_tests(tests, rule_setup, rule_teardown);
+			}
+			{
+				const struct CMUnitTest tests[] = {
+					cmocka_unit_test(delete_rule_direction_test),
 				};
 				(void) cmocka_run_group_tests(tests, rule_setup, rule_teardown);
 			}
